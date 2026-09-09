@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ subject.name }} - Topic Index - JHS Training Portal{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{{ subject.name }}</li>
+  </ol>
+</nav>
+
+<!-- Subject Summary Card -->
+<div class="card bg-white border-0 shadow-sm mb-4">
+  <div class="card-body p-4">
+    <div class="row align-items-center g-4">
+      <div class="col-lg-6">
+        <h2 class="fw-bold text-dark mb-2">{{ subject.name }}</h2>
+        {% if subject.description %}
+          <p class="text-muted mb-0">{{ subject.description }}</p>
+        {% endif %}
+      </div>
+      
+      <div class="col-lg-6">
+        <div class="row g-3 text-center">
+          <div class="col-6 col-sm-3">
+            <div class="bg-light p-3 rounded">
+              <div class="small text-muted mb-1">Progress</div>
+              <div class="h5 fw-bold text-primary mb-0">{{ summary.progress_percent }}%</div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="bg-light p-3 rounded">
+              <div class="small text-muted mb-1">Completed</div>
+              <div class="h5 fw-bold text-dark mb-0">{{ summary.completed_topics_count }} / {{ summary.total_topics_count }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="bg-light p-3 rounded">
+              <div class="small text-muted mb-1">Understanding</div>
+              <div class="h5 fw-bold text-dark mb-0">
+                {% if summary.understanding_percent is not None %}{{ summary.understanding_percent }}%{% else %}N/A{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="bg-light p-3 rounded">
+              <div class="small text-muted mb-1">Passed</div>
+              <div class="h5 fw-bold text-success mb-0">{{ summary.assessments_passed_display }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Topic Index -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold text-dark mb-0">{{ subject.name }} Learning Path</h4>
+  <span class="text-muted small">{{ topics_data|length }} Topics total</span>
+</div>
+
+<div class="topic-list-group">
+  {% for item in topics_data %}
+  <a href="{% url 'topic_detail' subject.slug item.topic.id %}" class="list-group-item list-group-item-action p-3 text-decoration-none">
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <span class="fw-bold text-muted" style="min-width: 32px;">
+          {% if forloop.counter < 10 %}0{% endif %}{{ forloop.counter }}.
+        </span>
+        <div>
+          <h5 class="mb-1 text-dark fw-semibold fs-6">{{ item.topic.name }}</h5>
+          <p class="text-muted small mb-0 text-truncate-1" style="max-width: 600px;">{{ item.topic.summary }}</p>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-3 ms-sm-0 ms-5">
+        {% if item.best_score is not None %}
+          <span class="badge bg-light text-dark border">
+            Best Score: {{ item.best_score }}%
+          </span>
+        {% endif %}
+        
+        <span class="badge {{ item.display_status.badge_class }} px-3 py-2">
+          {{ item.display_status.icon }} {{ item.display_status.label }}
+        </span>
+        <i class="bi bi-chevron-right text-muted"></i>
+      </div>
+    </div>
+  </a>
+  {% empty %}
+  <div class="text-center py-5 bg-white rounded border">
+    <i class="bi bi-journal-x text-muted display-4"></i>
+    <p class="text-muted mt-2">No topics published in this subject yet.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

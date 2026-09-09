@@ -1,0 +1,44 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}LMS Settings - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">LMS Configuration Settings</h3>
+    <p class="text-muted mb-0">Configure default passing scores and question requirements across all training subjects.</p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12 col-md-8 col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3 border-bottom">
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-sliders text-danger me-2"></i> Global System Settings</h5>
+      </div>
+      <div class="card-body p-4">
+        <form action="{% url 'portal_settings' %}" method="post">
+          {% csrf_token %}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Default Passing Score (%)</label>
+            {{ form.default_passing_score }}
+            <div class="form-text">Default percentage required for a learner to pass a topic assessment (e.g. 75%). Can be overridden per topic.</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Minimum Questions Required to Publish a Topic</label>
+            {{ form.default_required_question_count }}
+            <div class="form-text">Minimum number of questions a topic must contain before an administrator can set its status to <strong>Published</strong> (e.g. 5).</div>
+          </div>
+
+          <div class="text-end">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-check-lg me-1"></i> Save Settings
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

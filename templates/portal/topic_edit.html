@@ -1,0 +1,368 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}Edit Topic: {{ topic.name }} - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<div class="mb-3">
+  <a href="{% url 'portal_subject_topics_list' topic.subject.id %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i> Back to {{ topic.subject.name }} Topics
+  </a>
+</div>
+
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <span class="badge bg-light text-dark border me-2">{{ topic.subject.name }}</span>
+    <h3 class="fw-bold text-dark d-inline-block mb-1">{{ topic.name }}</h3>
+    <div class="mt-1">
+      {% if topic.status == 'published' %}
+        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1">Published</span>
+      {% elif topic.status == 'draft' %}
+        <span class="badge bg-secondary-subtle text-secondary border px-3 py-1">Draft</span>
+      {% else %}
+        <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1">Archived</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Main Topic Settings Form -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-3 border-bottom">
+    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-sliders text-danger me-2"></i> Topic General Settings</h5>
+  </div>
+  <div class="card-body p-4">
+    <form action="{% url 'portal_topic_edit' topic.id %}" method="post">
+      {% csrf_token %}
+      {% if form.errors %}
+      <div class="alert alert-danger py-2 small mb-3">
+        <ul class="mb-0 ps-3">
+          {% for field in form %}
+            {% for error in field.errors %}
+              <li><strong>{{ field.label|default:field.name }}:</strong> {{ error }}</li>
+            {% endfor %}
+          {% endfor %}
+          {% for error in form.non_field_errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Subject</label>
+          {{ form.subject }}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Topic Name</label>
+          {{ form.name }}
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Topic Summary (2-4 lines)</label>
+          {{ form.summary }}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Publication Status</label>
+          {{ form.status }}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Display Order</label>
+          {{ form.order }}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Passing Score Override (%)</label>
+          {{ form.passing_score_override }}
+        </div>
+      </div>
+
+      <!-- Publish Gate Alert -->
+      {% if not is_publishable %}
+      <div class="alert alert-warning mt-3 mb-0 small d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
+        <div>
+          <strong>Publish Gate Warning:</strong> This topic currently has <strong>{{ current_question_count }}</strong> questions. It requires at least <strong>{{ required_question_count }}</strong> questions before it can be set to <strong>Published</strong>.
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="mt-4 text-end">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check-lg me-1"></i> Save Topic Details
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Inline Videos Section -->
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-play-btn-fill text-danger me-2"></i> Tutorial Videos</h5>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addVideoModal">
+          <i class="bi bi-plus-lg me-1"></i> Add Video
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for v in videos %}
+          <div class="list-group-item p-3 d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-bold text-dark mb-1"><i class="bi bi-file-earmark-play me-1 text-primary"></i> {{ v.title }}</div>
+              <div class="text-muted small">{{ v.duration|default:"Duration N/A" }} | <a href="{{ v.url }}" target="_blank" class="text-decoration-none">Open Link</a></div>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editVideoModal_{{ v.id }}">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form action="{% url 'portal_video_delete' v.id %}" method="post" class="d-inline" onsubmit="return confirm('Remove video tutorial?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Edit Video Modal -->
+          <div class="modal fade" id="editVideoModal_{{ v.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <form action="{% url 'portal_video_edit' v.id %}" method="post">
+                  {% csrf_token %}
+                  <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Edit Video Tutorial</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Video Title</label>
+                      <input type="text" name="title" value="{{ v.title }}" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Video URL</label>
+                      <input type="url" name="url" value="{{ v.url }}" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Duration (e.g. 18:42)</label>
+                      <input type="text" name="duration" value="{{ v.duration }}" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Description</label>
+                      <textarea name="description" class="form-control" rows="2">{{ v.description }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Display Order</label>
+                      <input type="number" name="order" value="{{ v.order }}" class="form-control">
+                    </div>
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% empty %}
+          <div class="text-center py-4 text-muted small">No videos added yet. Click "+ Add Video" to add one.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inline Materials Section -->
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-folder-fill text-primary me-2"></i> Learning Materials</h5>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addMaterialModal">
+          <i class="bi bi-plus-lg me-1"></i> Add Material
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for m in resources %}
+          <div class="list-group-item p-3 d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-bold text-dark mb-1">{{ m.title }}</div>
+              <div class="text-muted small">
+                <span class="badge bg-light text-dark border me-1">{{ m.get_resource_type_display }}</span>
+                <a href="{{ m.url }}" target="_blank" class="text-decoration-none">Open URL</a>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editMaterialModal_{{ m.id }}">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form action="{% url 'portal_material_delete' m.id %}" method="post" class="d-inline" onsubmit="return confirm('Remove material?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Edit Material Modal -->
+          <div class="modal fade" id="editMaterialModal_{{ m.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <form action="{% url 'portal_material_edit' m.id %}" method="post">
+                  {% csrf_token %}
+                  <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Edit Learning Material</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Material Title</label>
+                      <input type="text" name="title" value="{{ m.title }}" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Material Type</label>
+                      <select name="resource_type" class="form-select">
+                        <option value="pdf" {% if m.resource_type == 'pdf' %}selected{% endif %}>PDF Document</option>
+                        <option value="ppt" {% if m.resource_type == 'ppt' %}selected{% endif %}>PowerPoint Presentation</option>
+                        <option value="excel" {% if m.resource_type == 'excel' %}selected{% endif %}>Excel Practice File</option>
+                        <option value="word" {% if m.resource_type == 'word' %}selected{% endif %}>Word Document</option>
+                        <option value="video" {% if m.resource_type == 'video' %}selected{% endif %}>Video</option>
+                        <option value="image" {% if m.resource_type == 'image' %}selected{% endif %}>Image</option>
+                        <option value="practice_file" {% if m.resource_type == 'practice_file' %}selected{% endif %}>Practice File</option>
+                        <option value="external_link" {% if m.resource_type == 'external_link' %}selected{% endif %}>External Link</option>
+                        <option value="onedrive" {% if m.resource_type == 'onedrive' %}selected{% endif %}>OneDrive Link</option>
+                        <option value="other" {% if m.resource_type == 'other' %}selected{% endif %}>Other</option>
+                      </select>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Resource URL</label>
+                      <input type="url" name="url" value="{{ m.url }}" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Description</label>
+                      <textarea name="description" class="form-control" rows="2">{{ m.description }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Display Order</label>
+                      <input type="number" name="order" value="{{ m.order }}" class="form-control">
+                    </div>
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% empty %}
+          <div class="text-center py-4 text-muted small">No learning materials added yet. Click "+ Add Material" to add one.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quiz & Questions Status Section -->
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <div>
+          <h5 class="fw-bold text-dark mb-1"><i class="bi bi-patch-question-fill text-warning me-2"></i> Quiz Questions & Assessment</h5>
+          <p class="text-muted small mb-0">
+            Current Questions: <strong>{{ current_question_count }}</strong> (Minimum required to publish: <strong>{{ required_question_count }}</strong>)
+          </p>
+        </div>
+        <div>
+          <a href="{% url 'portal_questions_manage' topic.id %}" class="btn btn-warning fw-semibold">
+            <i class="bi bi-pencil-square me-1"></i> Manage Questions & Answers
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Video Modal -->
+<div class="modal fade" id="addVideoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{% url 'portal_video_add' topic.id %}" method="post">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold">Add Video Tutorial</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Video Title</label>
+            {{ video_form.title }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Video URL (OneDrive, YouTube or Direct Link)</label>
+            {{ video_form.url }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Duration (e.g. 18:42)</label>
+            {{ video_form.duration }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            {{ video_form.description }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Display Order (Optional)</label>
+            {{ video_form.order }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Video</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Material Modal -->
+<div class="modal fade" id="addMaterialModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{% url 'portal_material_add' topic.id %}" method="post">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold">Add Learning Material</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Material Title</label>
+            {{ resource_form.title }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Material Type</label>
+            {{ resource_form.resource_type }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Resource URL (OneDrive Link, PDF Link, etc.)</label>
+            {{ resource_form.url }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            {{ resource_form.description }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Display Order (Optional)</label>
+            {{ resource_form.order }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Material</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

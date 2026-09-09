@@ -1,0 +1,61 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}Learning Materials Overview - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Learning Materials Overview</h3>
+    <p class="text-muted mb-0">Overview of all PDFs, PPTs, Excel files, OneDrive links, and resources.</p>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-4">Material Title</th>
+            <th>Type</th>
+            <th>Subject / Topic</th>
+            <th>URL Link</th>
+            <th class="text-end pe-4">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in materials %}
+          <tr>
+            <td class="ps-4">
+              <div class="fw-bold text-dark">{{ m.title }}</div>
+              {% if m.description %}<div class="text-muted small">{{ m.description }}</div>{% endif %}
+            </td>
+            <td>
+              <span class="badge bg-light text-dark border">{{ m.get_resource_type_display }}</span>
+            </td>
+            <td>
+              <span class="badge bg-light text-dark border">{{ m.topic.subject.name }}</span>
+              <span class="text-muted small">&rarr; {{ m.topic.name }}</span>
+            </td>
+            <td>
+              <a href="{{ m.url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Open URL
+              </a>
+            </td>
+            <td class="text-end pe-4">
+              <a href="{% url 'portal_topic_edit' m.topic.id %}" class="btn btn-sm btn-outline-primary">
+                Edit in Topic
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center py-4 text-muted">No learning materials found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

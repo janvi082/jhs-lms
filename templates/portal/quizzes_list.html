@@ -1,0 +1,66 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}Quizzes & Assessments Overview - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Quizzes Overview</h3>
+    <p class="text-muted mb-0">Overview of questions count and publish readiness per topic.</p>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-4">Subject / Topic</th>
+            <th>Publication Status</th>
+            <th>Questions Count</th>
+            <th>Readiness Status</th>
+            <th class="text-end pe-4">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in quiz_data %}
+          <tr>
+            <td class="ps-4">
+              <span class="badge bg-light text-dark border me-1">{{ item.topic.subject.name }}</span>
+              <span class="fw-bold text-dark">{{ item.topic.name }}</span>
+            </td>
+            <td>
+              {% if item.topic.status == 'published' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Published</span>
+              {% elif item.topic.status == 'draft' %}
+                <span class="badge bg-secondary-subtle text-secondary border">Draft</span>
+              {% else %}
+                <span class="badge bg-warning-subtle text-dark border border-warning-subtle">Archived</span>
+              {% endif %}
+            </td>
+            <td class="fw-bold fs-6">{{ item.question_count }}</td>
+            <td>
+              {% if item.is_ready %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check-circle me-1"></i> Assessment Ready</span>
+              {% else %}
+                <span class="badge bg-warning-subtle text-dark border border-warning-subtle"><i class="bi bi-exclamation-triangle me-1"></i> Needs {{ required_count }} Questions</span>
+              {% endif %}
+            </td>
+            <td class="text-end pe-4">
+              <a href="{% url 'portal_questions_manage' item.topic.id %}" class="btn btn-sm btn-primary">
+                Manage Questions
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center py-4 text-muted">No topics found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

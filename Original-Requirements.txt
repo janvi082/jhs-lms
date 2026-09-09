@@ -1,0 +1,1122 @@
+# Original Requirements — JHS Learning Management System (V1 / MVP)
+**Note:** This is the original narrative requirements doc. For tech stack, schema, and build order, defer to `JHS-LMS-BUILD-PROMPT.md`. Use this file for exact UI wording, example screens, and specific worked examples (e.g. the pass/fail score table).
+
+---
+
+## 1. Project Objective
+
+I want to build a **JHS Internal Learning Management System (LMS)** for training interns/employees.
+
+This is initially a **Version 1 testing/MVP project**. The purpose is to build a working version, test it with actual learning content, understand how the workflow feels, and then make finalization changes based on the testing.
+
+Therefore:
+
+* Do not over-engineer Version 1.
+* Build the application in a clean and scalable way.
+* Keep the architecture flexible enough for future improvements.
+* Most importantly, make the **learning content completely dynamic**.
+* I should be able to manage subjects, topics, videos, materials and questions from the Admin Panel without modifying code.
+
+---
+
+## 2. Basic User Concept
+
+There will be two types of users:
+
+### Admin
+
+The administrator manages:
+
+* Users
+* Subjects
+* Topics
+* Videos
+* Learning materials
+* Quiz questions
+* Passing score
+* Learning content order
+* User progress
+
+### Learner
+
+The learner:
+
+* Logs in
+* Views assigned learning subjects
+* Opens topics
+* Watches tutorials
+* Reviews materials
+* Takes quizzes
+* Gets scores
+* Retakes failed quizzes
+* Tracks learning progress
+
+---
+
+## 3. Login
+
+Create a login page with:
+
+* User ID / Username
+* Password
+* Login button
+
+After successful login:
+
+### Learner → Learner Dashboard
+
+### Admin → Admin Dashboard
+
+For Version 1, authentication can be simple and secure. Do not build complicated enterprise authentication unless it is necessary.
+
+---
+
+## 4. Learner Dashboard
+
+After login, the learner should see the available subjects.
+
+Initially, the four core subjects are:
+
+1. **Excel**
+2. **Power BI**
+3. **Audit**
+4. **GST**
+
+These should NOT be hard-coded into the application.
+
+The Admin must be able to add additional subjects later.
+
+Example:
+
+```text
+Welcome, [User Name]
+
+My Learning
+
+┌────────────────────┐
+│       EXCEL        │
+│                    │
+│     Progress 82%  │
+│                    │
+│    [Continue]      │
+└────────────────────┘
+
+┌────────────────────┐
+│      POWER BI      │
+│                    │
+│     Progress 64%  │
+│                    │
+│    [Continue]      │
+└────────────────────┘
+
+┌────────────────────┐
+│       AUDIT        │
+│                    │
+│     Progress 71%  │
+│                    │
+│    [Continue]      │
+└────────────────────┘
+
+┌────────────────────┐
+│        GST         │
+│                    │
+│     Progress 55%  │
+│                    │
+│    [Continue]      │
+└────────────────────┘
+```
+
+---
+
+## 5. Subject Page
+
+When a learner selects a subject, show a structured **Topic Index**.
+
+Example:
+
+### Power BI
+
+```text
+Power BI Learning Path
+
+01. Introduction to Power BI       ✓ Completed
+02. Power Query                    ✓ Completed
+03. Data Cleaning                  ✓ Completed
+04. Data Modeling                  ◐ In Progress
+05. Relationships                  ○ Not Started
+06. DAX Fundamentals               ○ Not Started
+07. Measures                       ○ Not Started
+08. Visualizations                 ○ Not Started
+```
+
+Each topic should be clickable.
+
+Topics should be displayed according to the order defined by the Admin.
+
+The learner should clearly see:
+
+* Not Started
+* In Progress
+* Completed
+* Needs Improvement
+
+---
+
+## 6. Topic Learning Page
+
+When the learner clicks a topic, show a dedicated learning page.
+
+For example:
+
+### Power Query
+
+**Topic Summary**
+
+Display a **short 2–4 line maximum summary** explaining what the learner will learn.
+
+Example:
+
+> Power Query is a data transformation and preparation tool used to import, clean, transform and combine data before using it in Power BI.
+
+Keep this section short.
+
+---
+
+## 7. Video Tutorials
+
+Below the summary, display the video's/tutorials for the topic.
+
+Example:
+
+```text
+Video Tutorials
+
+▶ Power Query Introduction
+  Duration: 18:42
+
+▶ Data Cleaning
+  Duration: 24:15
+
+▶ Transformations
+  Duration: 21:08
+```
+
+The topic can have:
+
+* One video
+* Multiple videos
+* No videos
+
+The system must support multiple resources per topic.
+
+---
+
+## 8. Dynamic Learning Materials
+
+A topic should be able to contain **any type of learning material**.
+
+Do NOT assume that every topic will have the same type of content.
+
+For example, one topic may have:
+
+```text
+Videos
+PDF
+PPT
+Excel Practice File
+Summary
+External Link
+```
+
+Another topic may only have:
+
+```text
+Video
+PDF
+Quiz
+```
+
+Another could contain:
+
+```text
+PPT
+Excel file
+Website link
+Quiz
+```
+
+The application must support this flexibility.
+
+Possible resource types include:
+
+* Video
+* PDF
+* PowerPoint
+* Excel
+* Word
+* Image
+* Practice file
+* Summary
+* External website
+* OneDrive resource
+* Other
+
+Do not restrict the system to only these types.
+
+---
+
+## 9. OneDrive as Preferred Content Source
+
+The expected primary source for learning materials is **Microsoft OneDrive**.
+
+However, this is not 100% finalized.
+
+Therefore:
+
+### Do NOT tightly couple the entire application to OneDrive.
+
+Instead, create a generic **Resource/Material system** where the Admin can provide:
+
+* Resource name
+* Resource type
+* URL/link
+* Description
+* Display order
+
+The URL can currently be a OneDrive share link.
+
+Example:
+
+```text
+Resource Name:
+Power Query Notes
+
+Type:
+PDF
+
+URL:
+[OneDrive Share Link]
+
+Description:
+Quick revision notes
+```
+
+The learner should be able to click/open the resource.
+
+If the final decision later changes from OneDrive to another storage provider, the system should not need to be completely rebuilt.
+
+---
+
+## 10. Admin Panel
+
+Version 1 MUST include an Admin Panel.
+
+The Admin Panel is extremely important because I want to test how easy it is to manage the LMS.
+
+The Admin should be able to build the entire learning structure dynamically.
+
+---
+
+## 11. Admin Dashboard
+
+Create an Admin Dashboard showing basic statistics.
+
+For Version 1, examples:
+
+```text
+Total Learners        25
+Total Subjects         4
+Total Topics          50
+Average Progress      68%
+```
+
+Also provide quick actions:
+
+```text
+[Add Subject]
+
+[Add Topic]
+
+[Manage Content]
+
+[Manage Users]
+
+[View Progress]
+```
+
+Keep the dashboard simple for Version 1.
+
+---
+
+## 12. Admin — Subject Management
+
+Admin should be able to:
+
+* Add subject
+* Edit subject
+* Delete/deactivate subject
+* Change subject name
+* Add description
+* Change display order
+* Publish/unpublish subject
+
+Example:
+
+```text
+Subjects
+
+Excel       20 Topics     Active
+Power BI    15 Topics     Active
+Audit       12 Topics     Active
+GST          8 Topics     Active
+
+[+ Add Subject]
+```
+
+---
+
+## 13. Admin — Topic Management
+
+Inside each subject, Admin should be able to:
+
+* Add topic
+* Edit topic
+* Delete/deactivate topic
+* Change topic name
+* Add 2–4 line summary
+* Change topic order
+* Publish/unpublish topic
+
+Preferably provide **drag-and-drop ordering**.
+
+Example:
+
+```text
+Power BI
+
+☰ 01 Introduction
+☰ 02 Power Query
+☰ 03 Data Cleaning
+☰ 04 Data Modeling
+☰ 05 DAX
+
+[+ Add Topic]
+```
+
+---
+
+## 14. Admin — Topic Content Editor
+
+Each topic should have a central content management page.
+
+Example:
+
+```text
+Edit Topic
+────────────────────────
+
+Topic Name
+[Power Query]
+
+Short Summary
+[...................................]
+
+────────────────────────
+
+VIDEOS
+
+[+ Add Video]
+
+────────────────────────
+
+LEARNING MATERIALS
+
+[+ Add Resource]
+
+────────────────────────
+
+ASSESSMENT
+
+[Manage Questions]
+
+────────────────────────
+
+[Save Changes]
+```
+
+The Admin should be able to manage the entire topic from one place.
+
+---
+
+## 15. Admin — Add Video
+
+Admin should be able to add videos dynamically.
+
+Fields:
+
+```text
+Video Title
+Video URL
+Description
+Duration (optional)
+Display Order
+```
+
+The URL may initially point to OneDrive or another supported location.
+
+Do not force videos to be uploaded directly into the LMS.
+
+---
+
+## 16. Admin — Add Learning Material
+
+Create a generic **Add Resource** function.
+
+Fields:
+
+```text
+Resource Title
+Resource Type
+Resource URL
+Description
+Display Order
+```
+
+Resource Type should be selectable.
+
+For example:
+
+```text
+Video
+PDF
+PowerPoint
+Excel
+Word
+Image
+Practice File
+External Link
+OneDrive
+Other
+```
+
+But the system should not prevent me from adding a URL if the type is different.
+
+---
+
+## 17. Admin — Quiz Management
+
+Each topic should have an assessment.
+
+Default:
+
+### 5 questions per topic
+
+Admin should be able to:
+
+* Add question
+* Edit question
+* Delete question
+* Change question order
+* Define correct answer
+* Add answer options
+
+Version 1 can primarily use:
+
+### Multiple Choice Questions
+
+Example:
+
+```text
+Question:
+What is Power Query primarily used for?
+
+A. Creating presentations
+B. Data transformation
+C. Sending emails
+D. Writing VBA
+
+Correct Answer:
+B
+```
+
+---
+
+## 18. Quiz Passing Requirement
+
+Default passing score:
+
+# 75%
+
+For 5 questions:
+
+| Correct | Score | Result |
+| ------: | ----: | ------ |
+|       5 |  100% | PASS   |
+|       4 |   80% | PASS   |
+|       3 |   60% | FAIL   |
+|       2 |   40% | FAIL   |
+|       1 |   20% | FAIL   |
+|       0 |    0% | FAIL   |
+
+Therefore, **4 out of 5 correct answers are required to pass**.
+
+However, make the passing score configurable in the database/settings rather than hard-coding `75` everywhere.
+
+This will allow the organization to change the requirement later.
+
+---
+
+## 19. Failed Quiz
+
+If the learner scores below 75%:
+
+Example:
+
+```text
+Assessment Result
+
+Score: 60%
+
+❌ Not Passed
+
+You need at least 75% to complete this topic.
+
+Please review the learning materials and
+try the assessment again.
+
+[Review Tutorial]
+
+[Review Materials]
+
+[Try Again]
+```
+
+The topic should NOT be marked as completed.
+
+The learner should be able to retake the assessment.
+
+---
+
+## 20. Passed Quiz
+
+If the learner gets 75% or higher:
+
+```text
+🎉 Topic Completed!
+
+Score: 80%
+
+You have successfully completed this topic.
+
+[Continue to Next Topic]
+```
+
+The topic should be marked:
+
+**Completed**
+
+Store:
+
+* Score
+* Attempt number
+* Date/time
+* Completion status
+
+---
+
+## 21. Assessment Attempts
+
+The system should track every attempt.
+
+Example:
+
+```text
+Power Query
+
+Attempt 1 → 60% → Failed
+Attempt 2 → 80% → Passed
+Attempt 3 → 100% → Passed
+```
+
+Store at least:
+
+* Attempt number
+* Score
+* Correct answers
+* Total questions
+* Pass/fail
+* Date/time
+
+Also maintain the learner's **best score**.
+
+---
+
+## 22. Understanding Percentage
+
+The LMS should show an **Understanding %** based primarily on assessment performance.
+
+For example:
+
+```text
+Power Query
+Understanding: 80%
+```
+
+If a topic has not been attempted:
+
+```text
+Understanding: Not Assessed
+```
+
+Do not artificially give a learner a high understanding percentage simply because they opened a video.
+
+Assessment performance should be the primary basis for understanding.
+
+---
+
+## 23. Progress vs Understanding
+
+Keep these concepts logically separate.
+
+### Progress
+
+Indicates how much of the learning path the learner has completed.
+
+Example:
+
+```text
+6 of 10 topics completed
+
+Progress = 60%
+```
+
+### Understanding
+
+Indicates how well the learner performed in assessments.
+
+Example:
+
+```text
+Average assessment performance = 82%
+
+Understanding = 82%
+```
+
+This distinction is important.
+
+A learner can:
+
+```text
+Progress: 100%
+Understanding: 62%
+```
+
+meaning they completed all topics but performed poorly in assessments.
+
+---
+
+## 24. Subject-Level Progress
+
+For each subject show:
+
+```text
+Power BI
+
+Overall Progress
+████████████░░░░░░░░ 60%
+
+Topics Completed
+6 / 10
+
+Understanding
+78%
+
+Assessments Passed
+6 / 8
+```
+
+The exact calculation should be implemented consistently and documented.
+
+---
+
+## 25. Overall Learner Progress
+
+The main dashboard should eventually show:
+
+```text
+My Learning Progress
+
+Excel       82%
+Power BI    64%
+Audit       91%
+GST         48%
+
+Overall Progress: 71%
+```
+
+---
+
+## 26. Learner Progress Database
+
+Track user activity and progress.
+
+At minimum store:
+
+```text
+User
+Subject
+Topic
+Topic Status
+Assessment Attempts
+Latest Score
+Best Score
+Pass/Fail
+Completion Date
+```
+
+If practical, also track:
+
+```text
+Video Viewed
+Resource Opened
+Last Accessed
+Last Activity
+```
+
+Do not overcomplicate activity tracking in Version 1.
+
+---
+
+## 27. Admin — Learner Management
+
+Admin should be able to:
+
+* Add learner
+* Edit learner
+* Activate/deactivate learner
+* Reset password if applicable
+* View learner progress
+
+Example:
+
+| Learner    | Overall Progress | Status |
+| ---------- | ---------------: | ------ |
+| Intern 001 |              82% | Active |
+| Intern 002 |              65% | Active |
+| Intern 003 |              34% | Active |
+
+Clicking a learner should show subject-wise progress.
+
+---
+
+## 28. Admin — Progress View
+
+Admin should be able to see:
+
+```text
+Intern 001
+
+Excel       85%
+Power BI    72%
+Audit       90%
+GST         61%
+
+Overall      77%
+```
+
+And topic-level information:
+
+```text
+Power BI
+
+✓ Introduction       90%
+✓ Power Query        80%
+✓ Data Cleaning      100%
+◐ Data Modeling      60%
+○ DAX                Not Attempted
+```
+
+---
+
+## 29. Dynamic Content Requirement — VERY IMPORTANT
+
+The system must **not be designed like this**:
+
+```text
+if subject == Power BI:
+   show Power Query
+   show DAX
+```
+
+Instead, use a dynamic data structure.
+
+Conceptually:
+
+```text
+Subject
+   ↓
+Topics
+   ↓
+Topic Content
+   ├── Summary
+   ├── Videos
+   ├── Resources
+   └── Questions
+```
+
+This means I should be able to create a completely new subject such as:
+
+```text
+Communication Skills
+```
+
+and then add:
+
+```text
+Topic 1
+Topic 2
+Topic 3
+```
+
+without changing application code.
+
+---
+
+## 30. Dynamic Resource Requirement — VERY IMPORTANT
+
+Do not assume every topic has:
+
+* exactly one video
+* exactly one PDF
+* exactly five materials
+
+Instead:
+
+```text
+Topic
+ ├── 0 or more Videos
+ ├── 0 or more Resources
+ └── 0 or more Questions
+```
+
+The default quiz can contain 5 questions, but the database should not be designed so rigidly that future changes become difficult.
+
+---
+
+## 31. Version 1 Scope
+
+For the first test version, prioritize:
+
+### MUST HAVE
+
+* Login
+* Learner dashboard
+* Admin dashboard
+* Subject management
+* Topic management
+* Dynamic content management
+* Video links
+* OneDrive/resource links
+* PDF/PPT/Excel/etc. resource links
+* Topic summaries
+* 5-question quizzes
+* 75% passing score
+* Retake functionality
+* Attempt tracking
+* Topic completion
+* Subject progress
+* Understanding percentage
+* Learner progress
+* Admin learner management
+
+### NOT REQUIRED YET
+
+Do not spend significant development time on:
+
+* Certificates
+* Gamification
+* Leaderboards
+* Notifications
+* Email automation
+* Advanced analytics
+* AI-generated questions
+* AI tutors
+* Complex organization hierarchy
+* Mobile application
+* Enterprise SSO
+* Advanced Microsoft Graph/OneDrive API integration
+
+These can be considered later after Version 1 testing.
+
+---
+
+## 32. Future-Proofing
+
+Although this is Version 1, structure the application so future features can be added without rebuilding the core.
+
+Potential future features:
+
+* Microsoft/Entra ID login
+* Direct OneDrive integration
+* SharePoint integration
+* Certificates
+* Assignments
+* Practical exercises
+* More question types
+* Randomized questions
+* Time limits
+* Due dates
+* Notifications
+* Learning paths
+* Departments
+* Multiple organizations
+* Advanced reports
+* AI learning assistant
+
+Do NOT implement these unless required for Version 1.
+
+---
+
+## 33. UI/UX Requirements
+
+The interface should feel like a **modern professional corporate LMS**, not a basic CRUD application.
+
+Prioritize:
+
+* Clean layout
+* Simple navigation
+* Clear subject cards
+* Progress bars
+* Clear topic status
+* Easy-to-use quiz interface
+* Clear PASS/FAIL feedback
+* Responsive design
+* Consistent typography
+* Professional colors
+* Good spacing
+* Desktop-first design, but responsive for smaller screens
+
+The learner should always understand:
+
+**Where am I?**
+
+**What do I need to learn?**
+
+**What have I completed?**
+
+**What do I need to improve?**
+
+---
+
+## 34. Recommended User Navigation
+
+```text
+LOGIN
+  │
+  ├── Admin
+  │     ↓
+  │   ADMIN DASHBOARD
+  │     ├── Users
+  │     ├── Subjects
+  │     ├── Topics
+  │     ├── Content
+  │     └── Progress
+  │
+  └── Learner
+        ↓
+    LEARNING DASHBOARD
+        ↓
+      SUBJECT
+        ↓
+    TOPIC INDEX
+        ↓
+    TOPIC PAGE
+        ├── Summary
+        ├── Videos
+        ├── Materials
+        └── Assessment
+                ↓
+          Score ≥ 75%?
+             /     \
+           YES      NO
+            ↓        ↓
+        Completed   Review
+                     ↓
+                   Retake
+```
+
+---
+
+## 35. Important Development Instructions
+
+Before writing a large amount of code:
+
+1. Understand the complete requirements above.
+2. Propose the architecture.
+3. Propose the database schema.
+4. Explain the main pages/components.
+5. Explain how dynamic content will work.
+6. Explain how OneDrive links will be stored.
+7. Explain how user progress will be calculated.
+8. Explain the MVP development plan.
+
+Then implement the application in logical stages.
+
+Do not create unnecessary complexity.
+
+---
+
+## 36. Most Important Goal
+
+The primary goal of Version 1 is **not to build the final JHS LMS immediately**.
+
+The goal is to create a **fully functional testable LMS** where I can:
+
+> **Log in → create/manage subjects → create topics → add summaries → add OneDrive videos/materials → create quizzes → log in as a learner → learn → take the quiz → get a score → retake if below 75% → complete the topic → see progress.**
+
+I should be able to test the entire workflow myself from the Admin Panel without touching the source code.
+
+---
+
+## FINAL PRODUCT VISION
+
+The final system should feel like:
+
+**JHS Training Portal**
+
+```text
+                    JHS LEARNING PORTAL
+
+        ┌──────────┐ ┌──────────┐
+        │  EXCEL   │ │ POWER BI │
+        │   82%    │ │   64%    │
+        └──────────┘ └──────────┘
+
+        ┌──────────┐ ┌──────────┐
+        │  AUDIT   │ │   GST    │
+        │   91%    │ │   48%    │
+        └──────────┘ └──────────┘
+
+             Overall Progress
+                   71%
+```
+
+The learner selects a subject:
+
+**Subject → Topic → Summary → Videos → Materials → Quiz → Score → Completion → Progress**
+
+And the Admin can control the entire content structure:
+
+**Admin → Subjects → Topics → Videos → Materials → Questions → Users → Progress**
+
+---
+
+### One final implementation principle
+
+**Build Version 1 for flexibility, not perfection.**
+
+The content structure must be dynamic because I will be testing different types of learning materials and may change the final requirements after seeing the working application.
+
+**OneDrive is the preferred/likely (~80%) resource repository, but it must remain replaceable. The LMS should store resource links and metadata rather than making OneDrive a permanent architectural dependency.**
+
+**Do not assume that the four initial subjects, number of topics, resource types, number of videos, or exact quiz structure will remain unchanged.** The Admin Panel must allow me to experiment with these during Version 1 testing.

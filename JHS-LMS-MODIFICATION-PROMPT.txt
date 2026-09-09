@@ -1,0 +1,118 @@
+# MODIFICATION PROMPT — JHS LMS V1 (Custom Admin Portal + Theme Change)
+**Audience:** AI coding agent (Antigravity IDE), working on the EXISTING JHS LMS codebase already built from `JHS-LMS-BUILD-PROMPT.md`.
+
+**This is a modification, not a rebuild.** Do not regenerate the project from scratch. Before changing anything:
+1. Inspect the existing `accounts/`, `content/`, `quizzes/`, `progress/`, `core/` apps, their models, views, urls, and templates.
+2. Confirm the existing models (`User`, `Subject`, `Topic`, `Video`, `Resource`, `Question`, `Choice`, `SiteConfig`, `TopicProgress`, `QuizAttempt`), the quiz scoring logic, and progress calculations still work as-is.
+3. Do not delete existing migrations, existing seeded/test data, or rewrite working learner-facing logic. Only touch what the changes below require.
+4. **The entire learner-facing experience (login, dashboard, subject page, topic page, quiz flow, pass/fail logic, progress %) stays functionally unchanged.** The only thing that changes for learners is the color theme (Section 3).
+
+---
+
+## 1. What's Changing (summary)
+
+1. Build a **custom, non-technical Admin Portal** inside the LMS itself, replacing Django's `/admin/` as the day-to-day management interface.
+2. Keep `/admin/` working, but restrict it to superusers only, and remove it from the normal admin's navigation.
+3. Change the theme from blue to a professional red corporate palette (one-file CSS variable change — no template rewrites needed, since `theme.css` was already built to isolate this).
+4. Tighten the "5 questions" rule: a Topic cannot be **published/made visible to learners** until it has the configured minimum number of questions, with a clear warning shown to the admin below that threshold. (This refines, not replaces, the existing `SiteConfig.default_required_question_count` field and "assessment-ready" logic — reuse them.)
+
+Everything else (models, scoring, progress formulas, URLs for learner-facing pages, HTMX quiz flow) stays as already built.
+
+---
+
+## 2. Custom Admin Portal
+
+### 2.1 Access control
+- New URL namespace: `/portal/` for the custom admin UI (keep `/admin/` untouched underneath it for superuser fallback).
+- Only users with `role == admin` (or `is_staff`) can reach `/portal/`. Enforce with a decorator/mixin, not ad-hoc checks per view.
+- The existing Admin Dashboard's "Open Django Admin" link is removed from the normal nav. Show a small "Developer Tools → Django Admin" link **only when `request.user.is_superuser`** — nowhere else.
+
+### 2.2 Navigation structure
+Build a persistent sidebar/topbar for `/portal/` with this structure (business language only — never say "model," "queryset," "foreign key," "Django Admin," or "database" anywhere in this UI):
+
+```
+JHS Admin Portal
+CONTENT
+  Subjects
+  Topics
+  Videos
+  Materials
+  Quizzes
+LEARNERS
+  Learners
+  Progress
+SETTINGS
+  LMS Settings
+```
+
+### 2.3 Screens to build (Django views + forms + templates; HTMX for inline/modal interactions — no separate JS framework)
+
+- **Subjects list** (`/portal/subjects/`) — table with name, topic count, status badge (Active/Inactive), Edit/Manage buttons, "+ Add Subject" button. Add/Edit via a simple form (name, description, order, status) — modal or dedicated page, your choice, but keep it one form either way.
+- **Topics list** (`/portal/subjects/<id>/topics/`) — ordered list per subject with drag-to-reorder (persist `order` field via an HTMX endpoint that saves the new order on drop — reuse `django-admin-sortable2`'s underlying `order` field, just drive it from a custom drag-drop UI instead of the admin's). Add/Edit/Archive topic actions.
+- **Topic Editor** (`/portal/topics/<id>/edit/`) — the central screen: topic name, summary, status (Draft/Published), optional passing-score override, then three inline management sections on the same page:
+  - **Videos** — list with Edit/Delete, "+ Add Video" (title, URL, description, duration, order).
+  - **Materials** — list with Edit/Delete, "+ Add Material" (title, type dropdown incl. "Other", URL, description, order, status).
+  - **Assessment** — shows current question count and a "Manage Questions" link into the question editor below.
+  - Use HTMX for add/edit/delete on Videos and Materials so the admin never leaves this page (partial re-render of the relevant list section).
+- **Question Editor** (`/portal/topics/<id>/questions/`) — list of questions with Edit/Delete/reorder, "+ Add Question." The add/edit form: question text, a dynamic list of choice inputs (start with 2, allow adding more via HTMX "+ Add Choice" — a formset is the natural fit here), and a way to mark exactly one as correct (radio buttons next to each choice, not a separate dropdown, so it scales past 4 options). Validate server-side: **≥2 choices, exactly 1 marked correct** — reject the save with a clear message otherwise, never a raw Django validation traceback.
+- **Publish gate:** when the admin tries to set a Topic's status to Published, check `question_count >= SiteConfig.default_required_question_count` (or per-topic override if one exists). If short, block the save and show: `"This topic has only {n} questions. Please add {needed} more before publishing."` — matching the tone of the spec's example message. This is enforced in the Topic Editor's save handler, not as a hard model-level constraint (a topic can still be saved as Draft with fewer questions).
+- **Learners list** (`/portal/learners/`) — table: name, status (Active/Inactive), overall progress %, "View" link. Add Learner form (username, name, email, initial password or "must reset on first login" — keep this simple, no email delivery required for V1). Activate/Deactivate toggle. Reset password action (generates a new temp password shown once to the admin, or lets the admin type one — either is fine, just don't silently fail).
+- **Progress drill-down** (`/portal/learners/<id>/`) — per-learner subject breakdown (Excel 85%, Power BI 64%, etc.), click into a subject to see topic-by-topic status + score (✓/◐/○ with % or "Not Attempted"), reusing the existing `progress/services.py` calculations — do not duplicate that logic in the portal views, call the same service functions the learner-facing pages already use.
+- **LMS Settings** (`/portal/settings/`) — one form for `SiteConfig`: default passing score, default required question count. Plain labels, no "SiteConfig" terminology visible to the admin.
+
+### 2.4 Feedback messages
+Every create/update/delete action shows a plain success message via Django's messages framework (e.g. "Subject created successfully.", "Video added.", "Learner deactivated."). Never surface a raw exception or Django error page to the admin — catch expected validation issues and re-render the form with a friendly message instead.
+
+---
+
+## 3. Theme Change: Blue → Red
+
+This should be a **small, contained change** — the whole point of building `theme.css` with CSS variables earlier was to make exactly this kind of change safe. Do not touch template markup or component structure. Only update the variable values:
+
+```css
+:root {
+  --lms-primary: #b3241c;       /* was blue, now red */
+  --lms-primary-dark: #7d1712;
+  --lms-primary-light: #fbe9e8;
+  --lms-accent: #d64545;
+  --lms-success: #1f9d55;       /* unchanged — semantic green stays green */
+  --lms-warning: #e0a419;       /* add if not already present — for "In Progress"/"Needs Improvement" */
+  --lms-danger: #b3241c;        /* unchanged intent — red for fail/error, now matches brand too */
+  --lms-bg: #f7f7f8;
+  --lms-text: #1f2937;
+  --lms-radius: 10px;
+}
+```
+
+Keep the semantic color rules exactly as before: green = passed/completed, amber/warning = in progress or a warning state, red = failed/error (which now doubles as the brand color — that's fine, keep them visually distinguishable via icons/labels, not color alone). Do not turn the whole interface red — red is for brand marks, primary buttons, active nav state, and headings/accents only; backgrounds and body text stay neutral.
+
+Apply this same `theme.css` to both the learner-facing pages and the new `/portal/` admin templates — one shared stylesheet, one visual identity across the whole app.
+
+---
+
+## 4. What NOT to Change
+
+- Do not modify `TopicProgress`, `QuizAttempt`, scoring, or progress-percentage logic — those are correct as built and this modification doesn't touch them.
+- Do not add Microsoft Graph API, OAuth, or OneDrive file browsing — resources remain pasted URLs.
+- Do not add learner assignment/enrollment restrictions — all active learners still see all active subjects.
+- Do not remove or disable `/admin/` — just gate it to superusers and stop linking to it from normal admin navigation.
+- Do not rebuild the learner-facing templates beyond the theme variable swap.
+
+---
+
+## 5. Verification (Acceptance Test)
+
+Run this exact flow after the changes, without ever opening `/admin/`:
+
+1. Log in as a normal `role=admin` user (not superuser). Confirm there is no visible link to Django Admin anywhere in their UI.
+2. From `/portal/`, create a new Subject "Communication Skills."
+3. Add three topics to it, each with a summary.
+4. On the first topic, add a video, a material (any type), and only 3 questions. Try to publish it — confirm the app blocks this with the "add N more questions" message and the topic stays in Draft.
+5. Add 2 more questions to reach the required count, then publish successfully.
+6. Log out, log in as a learner. Confirm "Communication Skills" appears automatically with no code changes, and the first topic's quiz is available.
+7. Take the quiz, fail intentionally (score below passing threshold) — confirm "Needs Improvement"/Fail state and retake availability.
+8. Retake and pass — confirm topic shows Completed, best score recorded.
+9. Log back in as admin, open the Progress drill-down for that learner, confirm the updated subject/topic progress reflects the attempt automatically.
+10. Confirm the whole app (learner and admin views) now renders in the red theme, with green/amber/red still used correctly for status semantics.
+
+If every step above works without touching source code mid-test and without needing `/admin/`, the modification is complete.

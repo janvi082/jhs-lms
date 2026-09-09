@@ -1,0 +1,215 @@
+# MASTER BUILD PROMPT — JHS Learning Management System (V1 / MVP)
+**Audience:** AI coding agent (Antigravity IDE). Read this whole document before writing any code.
+**Rule:** The decisions below are FINAL. Do not propose alternative stacks or ask about them. Only ask a question if a genuinely missing detail blocks you (e.g. an actual OneDrive URL). Otherwise make the most sensible MVP choice and proceed.
+**Companion file:** A second file, `Original-Requirements.md`, is attached alongside this one. This build prompt is the authoritative source for tech stack, schema, and architecture — do not deviate from it. The companion file is the authoritative source for exact wording, UI text, example screens, and specific numeric examples (e.g. the pass/fail score table) — when this build prompt doesn't spell out exact copy for a screen, pull it from the companion file's examples rather than inventing new wording.
+
+---
+
+## 0. Prime Directive
+
+Build a fully working, testable LMS where 100% of learning content (subjects, topics, videos, resources, quiz questions, passing score) is managed from an Admin Panel — **zero code changes required to add/edit content**.
+
+Two categories of future change, and they must stay separate:
+- **Content changes** (new subject, new topic, new video/resource, new quiz, change passing %) → Admin Panel only, no code.
+- **Design/behavior changes** (theme colors, new page type, new feature/logic) → requires code changes. This is expected and acceptable.
+
+Do not over-engineer. No certificates, gamification, notifications, SSO, AI features, mobile app, or deep OneDrive/Graph API integration in V1 — links are stored as plain URLs.
+
+**Hard architectural rule:** never branch application logic on a subject/topic name or ID (no `if subject.name == "Power BI"` anywhere). Every page, calculation, and admin screen must work identically for any subject/topic that exists in the database, including ones an admin creates after the app is deployed. Treat "can I add a brand-new subject called 'Communication Skills' with 3 topics purely from the Admin Panel and have it work exactly like the seeded ones, with zero code touched" as the definition of done for dynamic content.
+
+**Explicit V1 scope decisions (do not add these even if it seems easy):** no tracking of individual video-watched or resource-opened events, no "last accessed" timestamp — the spec calls these optional ("if practical") and V1 deliberately skips them to avoid overcomplicating activity tracking. Only quiz attempts and topic completion are tracked. Also: quizzes are multiple-choice only (single correct answer per question), no time limits, no randomized question order, no due dates — these are explicitly future-only (see Section 9).
+
+---
+
+## 1. Tech Stack (final, do not deviate)
+
+- **Language/Framework:** Python 3.11+, **Django 5.x** (monolith, server-rendered templates). Django is chosen because its built-in Admin app gives us 70% of the "manage everything without code" requirement for free.
+- **Database:** SQLite for MVP (zero config). Use Django ORM only — no raw SQL — so switching to PostgreSQL later is a one-line settings change (use `dj-database-url` + env var from day one).
+- **Frontend:** Django templates + Bootstrap 5 (via CDN, no build step) + a small `theme.css` with CSS variables for the color palette. Use **HTMX** (single CDN script) only for the quiz submit interaction (no full page reload needed); everything else is plain server-rendered pages. No React/Node/webpack — keep this 100% Python-driven.
+- **Auth:** Django's built-in auth, but define a **custom `User` model** on day one (`role` field: `admin` / `learner`, plus Django's normal `is_staff`/`is_superuser` for Admin-site access). Do this first — changing the User model later is painful.
+- **Ordering/drag-drop in Admin:** use `django-admin-sortable2` for Topic/Video/Resource/Question ordering instead of hand-building drag-drop JS.
+- **Packages to install:** `django`, `django-admin-sortable2`, `dj-database-url`, `python-decouple` (env vars), `whitenoise` (static files). Nothing else unless a step below needs it.
+
+---
+
+## 2. Project Structure
+
+```
+jhs_lms/
+  manage.py
+  requirements.txt
+  .env.example
+  README.md
+  config/            # Django project settings
+  accounts/          # custom User, login/logout, role checks
+  content/           # Subject, Topic, Video, Resource, SiteConfig
+  quizzes/           # Question, Choice, QuizAttempt
+  progress/          # TopicProgress, aggregation logic
+  core/              # shared base template, theme.css, dashboard views
+  templates/
+  static/
+```
+
+Each app has its own `models.py`, `admin.py`, `views.py`, `urls.py`. Keep business logic (scoring, progress %, understanding %) in `progress/services.py` and `quizzes/services.py`, not scattered in views.
+
+---
+
+## 3. Data Models (exact fields — implement as specified)
+
+```
+User (custom, extends AbstractUser)
+  role: choices [admin, learner], default learner
+  # is_staff/is_superuser still control Django admin access
+
+SiteConfig (singleton row, one instance only)
+  default_passing_score: int, default 75   # percentage
+
+Subject
+  name, slug (auto), description, order (int), is_active (bool)
+
+Topic
+  subject: FK -> Subject
+  name, summary (max ~4 lines, CharField 400), order (int), is_active (bool)
+  passing_score_override: int, null=True, blank=True  # falls back to SiteConfig if null
+
+Video
+  topic: FK -> Topic
+  title, url, description (optional), duration (optional CharField "18:42"), order (int)
+
+Resource
+  topic: FK -> Topic
+  title, resource_type: choices [video, pdf, ppt, excel, word, image, practice_file,
+      external_link, onedrive, other]
+  url, description (optional), order (int)
+
+Question
+  topic: FK -> Topic
+  text, order (int)
+
+Choice
+  question: FK -> Question
+  text, is_correct (bool)
+  # enforce exactly one is_correct per question in admin validation
+
+TopicProgress
+  user: FK -> User, topic: FK -> Topic
+  status: choices [not_started, in_progress, completed]
+  best_score (int %), latest_score (int %)
+  attempts_count (int)
+  completed_at (datetime, null)
+  unique_together: (user, topic)
+
+QuizAttempt
+  user: FK -> User, topic: FK -> Topic
+  attempt_number (int)
+  correct_count, total_questions
+  score (int %), passed (bool)
+  created_at (datetime, auto_now_add)
+```
+
+Business rules to encode in `progress/services.py`:
+- **Progress % (subject)** = completed topics / total active topics in subject.
+- **Understanding % (subject)** = average of `best_score` across topics with at least one attempt in that subject; if none attempted, show "Not Assessed".
+- **Overall progress** = average of subject progress % across all subjects the learner has any activity in (or all active subjects — pick all active subjects for simplicity).
+- **Assessments Passed (subject)** = count of topics in that subject with `TopicProgress.status == completed` / total active topics — displayed alongside Progress % and Understanding % on the Subject page (per spec Section 24). Note this numerator is the same set as "topics completed," so it can reuse the same query.
+- **Pass check** = `score >= (topic.passing_score_override or SiteConfig.default_passing_score)`.
+- Every quiz submission creates a new `QuizAttempt`, then upserts `TopicProgress` (`attempts_count += 1`, update `latest_score`, `best_score = max(best_score, score)`, set `status = completed` if passed else `in_progress`, set `completed_at` on first pass only).
+- The 5-questions-per-topic and 75%-passing-score numbers are **defaults/conventions**, never enforced constraints in code — an admin must be able to add a topic with 3 or 10 questions, or override its passing score, without hitting a validation error.
+
+---
+
+## 4. Admin Panel Approach (important — do not rebuild Django admin from scratch)
+
+Use **Django's built-in admin app** (`/admin/`) as the actual content-management tool, customized as follows — this satisfies "manage everything without touching code" with minimal build effort:
+
+- Register `Subject`, `Topic`, `Video`, `Resource`, `Question`, `Choice`, `SiteConfig`, `User` in `admin.py`.
+- Use `django-admin-sortable2` mixins on `Topic`, `Video`, `Resource`, `Question` for drag-drop `order`.
+- Use **inlines**: `Video`, `Resource`, `Question` (with `Choice` nested inline) inside the `Topic` admin page, so an admin can edit a whole topic (summary + videos + resources + quiz) on one screen — this directly matches the "Edit Topic" spec in the requirements.
+- `Topic` admin inline inside `Subject` admin for quick topic reordering.
+- Customize `list_display` to show counts (e.g. Subject → topic count, active flag) matching the "Subjects: Excel — 20 Topics — Active" style from the spec.
+- `SiteConfig`: register as a singleton (block adding a second row).
+- `User` admin: rely on Django's built-in User admin for **Add learner / Edit / Activate-deactivate (`is_active`) / Reset password** — this is all built into Django admin already, no custom views needed. Just make sure `role` is an editable field on the User admin form.
+
+Additionally build ONE lightweight **custom Admin Dashboard page** (`/dashboard/admin/`, staff-only) — NOT inside Django admin — showing: total learners, total subjects, total topics, average progress, and quick-link buttons to the relevant Django admin add pages (`Add Subject`, `Add Topic`, `Manage Users` → links straight into `/admin/...`). Also build a simple **Learner Progress view** here: a list of learners with overall %, click-through to a per-learner page showing subject-by-subject % (Excel 85%, Power BI 72%, etc.), and drilling one level further into topic-by-topic status + score within a chosen subject (✓/◐/○ with % or "Not Attempted", matching spec Section 28) — read-only, pulls from `progress` app.
+
+Do not attempt to reskin the entire Django admin UI. Only this one dashboard + progress page need the custom blue theme; the rest of admin can use Django's default admin styling.
+
+---
+
+## 5. Learner-Facing Pages (custom templates, blue theme)
+
+1. **Login** — username/password, Django auth, redirect by role.
+2. **Learner Dashboard** (`/`) — cards per active Subject: name, progress bar %, "Continue" button. Show overall progress at top.
+3. **Subject Page** (`/subject/<slug>/`) — ordered topic list with status icon (✓ completed / ◐ in progress / ○ not started), progress bar, understanding %.
+4. **Topic Page** (`/subject/<slug>/topic/<id>/`) — summary (short), video list, resource list (icon per `resource_type`), "Take Assessment" button, attempt history if any.
+5. **Quiz Page** — render `Question`+`Choice` as a form (radio buttons), submit via HTMX to a scoring endpoint, show result partial in place (no full reload).
+6. **Result Page/Partial** — PASS (🎉, score, "Continue to Next Topic" linking to next `order`) or FAIL (❌, required %, "Review Tutorial" / "Review Materials" / "Try Again" links).
+
+All pages extend one `base.html` with a shared nav, using `theme.css`.
+
+**UX principle to apply on every learner page:** the learner should always be able to answer, at a glance — Where am I? (breadcrumb: Subject > Topic), What do I need to learn? (summary + resource list visible without scrolling), What have I completed? (status icons/progress bars), What do I need to improve? (understanding % and last quiz result visible on the topic itself, not buried in a separate page). Desktop-first layout, but must remain usable on a narrow viewport (stack cards, collapse nav) via Bootstrap's responsive grid — no separate mobile app or mobile-specific templates.
+
+---
+
+## 6. Theme (do this once, correctly, so it never needs revisiting)
+
+Create `static/css/theme.css` with CSS custom properties only — no hardcoded colors inside templates:
+
+```css
+:root {
+  --lms-primary: #1e5fbf;      /* main blue */
+  --lms-primary-dark: #14458c;
+  --lms-primary-light: #e8f0fc;
+  --lms-accent: #3b82f6;
+  --lms-success: #1f9d55;
+  --lms-danger: #d64545;
+  --lms-bg: #f7f9fc;
+  --lms-text: #1f2937;
+  --lms-radius: 10px;
+}
+```
+Bootstrap components (cards, buttons, progress bars, badges) are restyled via these variables. Clean corporate look: generous whitespace, rounded cards, subtle shadows, one accent blue — no gradients, no dark mode needed for V1.
+
+---
+
+## 7. Before Writing Code
+
+Post a short confirmation (models list, page list, and how the passing-score/progress calc will work, in a few lines — not a restatement of this whole document) so any misreading is caught before code is generated. Then proceed straight through the stages below without stopping for approval at each one, unless something is genuinely ambiguous.
+
+---
+
+## 8. Build Order (execute in these stages, verify each before moving on)
+
+1. Project scaffold + settings (env-based DB config, whitenoise, installed apps) + custom `User` model + base template + `theme.css`.
+2. `content` app models + admin (with sortable inlines) + migrations.
+3. `quizzes` app models + admin inlines (Question→Choice) + migrations.
+4. `progress` app models + `services.py` (scoring + progress/understanding calculations).
+5. Auth: login/logout views, role-based redirect.
+6. Learner templates: Dashboard → Subject page → Topic page.
+7. Quiz flow: render, HTMX submit, grading endpoint, pass/fail result partial, TopicProgress upsert.
+8. Custom Admin Dashboard page + Learner Progress view (staff-only, `@staff_member_required`).
+9. Seed data management command (`python manage.py seed_demo`) creating the 4 sample subjects (Excel, Power BI, Audit, GST) with a couple of topics/videos/resources/questions each, so the app is testable immediately.
+10. `requirements.txt`, `.env.example`, `README.md` with setup + run instructions.
+
+---
+
+## 9. Explicitly Future — Do Not Build Now
+
+Not required for V1, not even a stub or placeholder field: certificates, gamification/leaderboards, notifications/email automation, Microsoft Entra ID / SSO login, direct OneDrive/SharePoint API integration (v1 just stores plain URLs), assignments, additional question types (only single-correct MCQ now), randomized question order, time limits, due dates, learning paths, departments/multi-organization support, advanced analytics/reports beyond what's in Sections 3–4, and any AI-generated content or AI tutor features. If a design decision could go either the simple way or a way that leaves room for one of these later, prefer the simple way — don't pre-build hooks for features that aren't happening yet.
+
+---
+
+## 10. Acceptance Checklist (must all pass before calling V1 done)
+
+- [ ] Admin can create a brand-new Subject with topics, videos, resources, and a 5-question quiz — entirely from `/admin/` — with zero code edits.
+- [ ] Passing score is read from `SiteConfig` (or per-topic override), not hardcoded as `75` anywhere in logic.
+- [ ] Learner can log in, browse subjects/topics, view videos/resources, take a quiz, see PASS/FAIL, retake, and see the topic marked completed on pass.
+- [ ] TopicProgress and QuizAttempt records are created correctly, including attempt numbering and best-score tracking.
+- [ ] Subject and Dashboard pages show correct Progress %, Understanding %, and Assessments Passed count per the formulas in Section 3.
+- [ ] Admin can add/deactivate/reset-password for a learner via `/admin/` with no custom code.
+- [ ] Admin Dashboard shows live counts and links into admin add-pages; Learner Progress view drills down learner → subject → topic.
+- [ ] Theme is applied consistently via `theme.css` variables only; no other design system in use.
+- [ ] `seed_demo` command populates working demo content for immediate testing.
+- [ ] A brand-new subject added purely through the Admin Panel behaves identically to the seeded ones — proves no hardcoded logic exists.
+
+Do not build anything from the Section 9 "Explicitly Future" list — skip these entirely for V1.

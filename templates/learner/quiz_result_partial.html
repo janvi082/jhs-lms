@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+
+{% block title %}Assessment Results - {{ topic.name }} - JHS Training Portal{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0">
+    <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'subject_detail' subject.slug %}">{{ subject.name }}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'topic_detail' subject.slug topic.id %}">{{ topic.name }}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Assessment Results</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <!-- Overall Result Header Card -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body p-4 text-center">
+        {% if attempt.passed %}
+          <div class="mb-3">
+            <div class="display-3 mb-2">🎉</div>
+            <h3 class="fw-bold text-success mb-1">Assessment Passed!</h3>
+            <span class="badge bg-success fs-6 px-3 py-2 mb-3">PASS</span>
+            <div class="h2 fw-bold text-dark my-2">{{ attempt.score }}%</div>
+            <p class="text-muted small mb-0">Required passing score: <strong>{{ effective_passing_score }}%</strong></p>
+          </div>
+        {% else %}
+          <div class="mb-3">
+            <div class="display-3 text-danger mb-2">❌</div>
+            <h3 class="fw-bold text-danger mb-1">Assessment Not Passed</h3>
+            <span class="badge bg-danger fs-6 px-3 py-2 mb-3">FAIL</span>
+            <div class="h2 fw-bold text-dark my-2">{{ attempt.score }}%</div>
+            <p class="text-muted small mb-0">Required passing score: <strong>{{ effective_passing_score }}%</strong></p>
+          </div>
+        {% endif %}
+
+        <!-- Stat Badges Row -->
+        <div class="row g-2 my-3 justify-content-center">
+          <div class="col-6 col-sm-3">
+            <div class="p-2 border rounded bg-light">
+              <div class="text-muted small">Total Questions</div>
+              <div class="fw-bold fs-5 text-dark">{{ attempt.total_questions }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="p-2 border rounded bg-success-subtle text-success">
+              <div class="small">Correct Answers</div>
+              <div class="fw-bold fs-5">{{ attempt.correct_count }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="p-2 border rounded bg-danger-subtle text-danger">
+              <div class="small">Wrong Answers</div>
+              <div class="fw-bold fs-5">{{ wrong_count }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="p-2 border rounded bg-light">
+              <div class="text-muted small">Attempt</div>
+              <div class="fw-bold fs-5 text-dark">#{{ attempt.attempt_number }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Learning Flow Action Buttons -->
+        <div class="d-flex flex-wrap justify-content-center gap-2 mt-4">
+          <a href="{% url 'topic_detail' subject.slug topic.id %}" class="btn btn-outline-secondary px-4 py-2">
+            <i class="bi bi-book me-1"></i> Back to Topic
+          </a>
+          <a href="{% url 'quiz_modal' subject.slug topic.id %}" class="btn btn-outline-primary px-4 py-2">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Retake Assessment
+          </a>
+          {% if next_topic %}
+            <a href="{% url 'topic_detail' subject.slug next_topic.id %}" class="btn btn-success px-4 py-2">
+              Next Topic: {{ next_topic.name }} <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+          {% else %}
+            <a href="{% url 'subject_detail' subject.slug %}" class="btn btn-success px-4 py-2">
+              Back to Subject Index <i class="bi bi-check-all ms-1"></i>
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Question-by-Question Review Card -->
+    {% if question_reviews %}
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-list-check text-primary me-2"></i>Question Review</h5>
+        <span class="text-muted small" id="review-counter">Question 1 of {{ question_reviews|length }}</span>
+      </div>
+      <div class="card-body p-4">
+        {% for rev in question_reviews %}
+        <div class="question-review-card {% if not forloop.first %}d-none{% endif %}" id="review-card-{{ forloop.counter0 }}">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold text-dark mb-0">Question {{ rev.number }}: {{ rev.question_text }}</h6>
+            {% if rev.is_correct %}
+              <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i> Correct</span>
+            {% else %}
+              <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i> Wrong</span>
+            {% endif %}
+          </div>
+
+          <div class="p-3 mb-3 rounded border {% if rev.is_correct %}bg-success-subtle border-success{% else %}bg-danger-subtle border-danger{% endif %}">
+            <div class="mb-2">
+              <span class="fw-semibold text-secondary me-2">Your Answer:</span>
+              <span class="fw-bold {% if rev.is_correct %}text-success{% else %}text-danger{% endif %}">
+                {{ rev.user_choice_text }}
+              </span>
+            </div>
+            <div>
+              <span class="fw-semibold text-secondary me-2">Correct Answer:</span>
+              <span class="fw-bold text-success">
+                {{ rev.correct_choice_text }}
+              </span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        <!-- Navigation Buttons for Question Review -->
+        <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+          <button type="button" id="prev-question-btn" class="btn btn-outline-secondary btn-sm" onclick="showReviewQuestion(currentReviewIndex - 1)" disabled>
+            <i class="bi bi-chevron-left me-1"></i> Previous Question
+          </button>
+          <div class="btn-group" role="group" aria-label="Question selector">
+            {% for rev in question_reviews %}
+            <button type="button" class="btn btn-sm btn-outline-primary {% if forloop.first %}active{% endif %}" id="nav-dot-{{ forloop.counter0 }}" onclick="showReviewQuestion({{ forloop.counter0 }})">
+              {{ forloop.counter }}
+            </button>
+            {% endfor %}
+          </div>
+          <button type="button" id="next-question-btn" class="btn btn-outline-secondary btn-sm" onclick="showReviewQuestion(currentReviewIndex + 1)" {% if question_reviews|length <= 1 %}disabled{% endif %}>
+            Next Question <i class="bi bi-chevron-right ms-1"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    {% elif limitation_message %}
+    <div class="alert alert-info border-0 shadow-sm mb-4">
+      <i class="bi bi-info-circle me-2"></i> {{ limitation_message }}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<script>
+let currentReviewIndex = 0;
+const totalReviewQuestions = {{ question_reviews|length|default:0 }};
+
+function showReviewQuestion(index) {
+  if (index < 0 || index >= totalReviewQuestions) return;
+  
+  // Hide current
+  const currentCard = document.getElementById(`review-card-${currentReviewIndex}`);
+  const currentDot = document.getElementById(`nav-dot-${currentReviewIndex}`);
+  if (currentCard) currentCard.classList.add('d-none');
+  if (currentDot) currentDot.classList.remove('active');
+  
+  // Show target
+  currentReviewIndex = index;
+  const targetCard = document.getElementById(`review-card-${currentReviewIndex}`);
+  const targetDot = document.getElementById(`nav-dot-${currentReviewIndex}`);
+  if (targetCard) targetCard.classList.remove('d-none');
+  if (targetDot) targetDot.classList.add('active');
+  
+  // Update counter & buttons
+  const counter = document.getElementById('review-counter');
+  if (counter) counter.innerText = `Question ${currentReviewIndex + 1} of ${totalReviewQuestions}`;
+  
+  const prevBtn = document.getElementById('prev-question-btn');
+  const nextBtn = document.getElementById('next-question-btn');
+  if (prevBtn) prevBtn.disabled = (currentReviewIndex === 0);
+  if (nextBtn) nextBtn.disabled = (currentReviewIndex === totalReviewQuestions - 1);
+}
+</script>
+{% endblock %}

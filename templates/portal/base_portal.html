@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="portal-wrapper rounded shadow-sm overflow-hidden bg-white">
+  <!-- Portal Sidebar -->
+  <aside class="portal-sidebar">
+    <div class="d-flex align-items-center gap-2 mb-3 px-2">
+      <i class="bi bi-shield-lock-fill text-danger fs-4"></i>
+      <div>
+        <h6 class="fw-bold text-dark mb-0">JHS Admin Portal</h6>
+        <small class="text-muted" style="font-size: 0.7rem;">Management Console</small>
+      </div>
+    </div>
+
+    <nav class="nav flex-column">
+      <div class="nav-header">Content</div>
+      <a class="nav-link {% if 'subjects' in request.path %}active{% endif %}" href="{% url 'portal_subjects_list' %}">
+        <i class="bi bi-book"></i> Subjects
+      </a>
+      <a class="nav-link {% if 'topics' in request.path %}active{% endif %}" href="{% url 'portal_topics_list' %}">
+        <i class="bi bi-journal-text"></i> Topics
+      </a>
+      <a class="nav-link {% if 'videos' in request.path %}active{% endif %}" href="{% url 'portal_videos_overview' %}">
+        <i class="bi bi-play-btn"></i> Videos
+      </a>
+      <a class="nav-link {% if 'materials' in request.path %}active{% endif %}" href="{% url 'portal_materials_overview' %}">
+        <i class="bi bi-folder2-open"></i> Materials
+      </a>
+      <a class="nav-link {% if 'quizzes' in request.path or 'questions' in request.path %}active{% endif %}" href="{% url 'portal_quizzes_overview' %}">
+        <i class="bi bi-patch-question"></i> Quizzes
+      </a>
+
+      <div class="nav-header">Learners</div>
+      <a class="nav-link {% if 'learners' in request.path and 'progress' not in request.path %}active{% endif %}" href="{% url 'portal_learners_list' %}">
+        <i class="bi bi-people"></i> Learners
+      </a>
+      <a class="nav-link {% if 'progress' in request.path or 'learners/' in request.path and request.resolver_match.url_name == 'portal_learner_progress_detail' %}active{% endif %}" href="{% url 'portal_progress' %}">
+        <i class="bi bi-graph-up-arrow"></i> Progress
+      </a>
+
+      <div class="nav-header">Settings</div>
+      <a class="nav-link {% if 'settings' in request.path %}active{% endif %}" href="{% url 'portal_settings' %}">
+        <i class="bi bi-sliders"></i> LMS Settings
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Portal Main Content Area -->
+  <main class="portal-content">
+    {% block portal_content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+{% if show_modal %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var modalFlag = "{{ show_modal }}";
+    var targetId = null;
+
+    if (modalFlag === 'topic_add') {
+      targetId = 'addTopicModal';
+    } else if (modalFlag === 'subject_add') {
+      targetId = 'addSubjectModal';
+    } else if (modalFlag.startsWith('subject_edit_')) {
+      var subId = modalFlag.replace('subject_edit_', '');
+      targetId = 'editSubjectModal' + subId;
+    } else if (modalFlag === 'question_add') {
+      targetId = 'addQuestionModal';
+    } else if (modalFlag === 'video_add') {
+      targetId = 'addVideoModal';
+    } else if (modalFlag === 'material_add') {
+      targetId = 'addMaterialModal';
+    } else {
+      // Fallback: check if an element with id == modalFlag exists
+      var directEl = document.getElementById(modalFlag);
+      if (directEl && directEl.classList.contains('modal')) {
+        targetId = modalFlag;
+      }
+    }
+
+    if (targetId) {
+      var modalEl = document.getElementById(targetId);
+      if (modalEl) {
+        var modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modalInstance.show();
+      }
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}

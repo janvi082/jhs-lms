@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables / secrets
+.env
+
+# SQLite local database
+db.sqlite3
+db.sqlite3.backup
+
+# Migration/export temporary files
+sqlite_data.json
+reset_sequences.sql
+
+# Django
+staticfiles/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
