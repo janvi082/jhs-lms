@@ -29,10 +29,16 @@
   <div class="col-12">
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-        <h6 class="fw-bold text-dark mb-0">
-          <span class="badge bg-light text-dark border me-2">Q{{ forloop.counter }}</span>
-          {{ q.text }}
-        </h6>
+        <div>
+          <span class="badge bg-light text-dark border me-1">Q{{ forloop.counter }}</span>
+          <span class="badge bg-primary me-1">{{ q.get_question_type_display }}</span>
+          {% if q.required %}
+            <span class="badge bg-secondary me-2">Required</span>
+          {% else %}
+            <span class="badge bg-light text-muted border me-2">Optional</span>
+          {% endif %}
+          <span class="fw-bold text-dark">{{ q.text }}</span>
+        </div>
         <form action="{% url 'portal_question_delete' q.id %}" method="post" onsubmit="return confirm('Delete this question?');">
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -41,20 +47,35 @@
         </form>
       </div>
       <div class="card-body p-3">
-        <div class="row g-2">
-          {% for c in q.choices.all %}
-          <div class="col-12 col-md-6">
-            <div class="p-2 border rounded d-flex align-items-center justify-content-between {% if c.is_correct %}bg-success-subtle border-success{% else %}bg-light{% endif %}">
-              <span class="small {% if c.is_correct %}fw-bold text-success{% else %}text-dark{% endif %}">
-                {{ c.text }}
-              </span>
-              {% if c.is_correct %}
-                <span class="badge bg-success small"><i class="bi bi-check-circle-fill me-1"></i> Correct Answer</span>
-              {% endif %}
+        {% if q.question_type == 'single' or q.question_type == 'multiple' or q.question_type == 'true_false' %}
+          <div class="row g-2">
+            {% for c in q.choices.all %}
+            <div class="col-12 col-md-6">
+              <div class="p-2 border rounded d-flex align-items-center justify-content-between {% if c.is_correct %}bg-success-subtle border-success{% else %}bg-light{% endif %}">
+                <span class="small {% if c.is_correct %}fw-bold text-success{% else %}text-dark{% endif %}">
+                  {{ c.text }}
+                </span>
+                {% if c.is_correct %}
+                  <span class="badge bg-success small"><i class="bi bi-check-circle-fill me-1"></i> Correct Answer</span>
+                {% endif %}
+              </div>
             </div>
+            {% endfor %}
           </div>
-          {% endfor %}
-        </div>
+        {% elif q.question_type == 'short_answer' %}
+          <div class="p-2 bg-light border rounded">
+            <strong class="small text-secondary d-block mb-1"><i class="bi bi-check-all me-1"></i> Accepted Answers (Case-Insensitive):</strong>
+            <ul class="mb-0 ps-3 small text-dark">
+              {% for ans in q.get_accepted_answers_list %}
+                <li><code>{{ ans }}</code></li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% elif q.question_type == 'paragraph' %}
+          <div class="p-2 bg-light border rounded">
+            <span class="small text-muted"><i class="bi bi-fonts me-1"></i> Open-ended text response. Saved for admin review (not automatically graded).</span>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -80,46 +101,119 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <div class="row g-3 mb-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Question Type</label>
+              <select name="question_type" id="questionTypeSelect" class="form-select" onchange="toggleQuestionTypeFields()">
+                <option value="single" selected>Single Choice (Radio Buttons)</option>
+                <option value="multiple">Multiple Choice (Checkboxes)</option>
+                <option value="true_false">True / False</option>
+                <option value="short_answer">Short Answer</option>
+                <option value="paragraph">Paragraph (Open Text Response)</option>
+              </select>
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" name="required" value="true" id="requiredCheck" checked>
+                <label class="form-check-label fw-semibold" for="requiredCheck">
+                  Required Question
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div class="mb-3">
             <label class="form-label fw-semibold">Question Text</label>
-            <textarea name="question_text" class="form-control" rows="2" placeholder="e.g. What is Power Query primarily used for?" required></textarea>
+            <textarea name="question_text" class="form-control" rows="2" placeholder="Enter question text..." required></textarea>
           </div>
 
-          <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
-          
-          <div class="choices-form-container">
+          <!-- SINGLE CHOICE FIELDS -->
+          <div id="singleChoiceFields">
+            <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
             <div class="input-group mb-2">
-              <div class="input-group-text">
-                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="1" required>
-              </div>
-              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text" required>
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="1" checked></div>
+              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text">
             </div>
-
             <div class="input-group mb-2">
-              <div class="input-group-text">
-                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="2">
-              </div>
-              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text" required>
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="2"></div>
+              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text">
             </div>
-
             <div class="input-group mb-2">
-              <div class="input-group-text">
-                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="3">
-              </div>
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="3"></div>
               <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)">
             </div>
-
             <div class="input-group mb-2">
-              <div class="input-group-text">
-                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="4">
-              </div>
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="4"></div>
               <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)">
             </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="5"></div>
+              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="6"></div>
+              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)">
+            </div>
           </div>
-          
-          <div class="alert alert-info small mt-3 mb-0">
-            <i class="bi bi-info-circle me-1"></i> Rules: Enter at least 2 choices and select <strong>exactly 1</strong> radio button to mark the correct answer.
+
+          <!-- MULTIPLE CHOICE FIELDS -->
+          <div id="multipleChoiceFields" style="display: none;">
+            <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="1"></div>
+              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="2"></div>
+              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="3"></div>
+              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="4"></div>
+              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="5"></div>
+              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="6"></div>
+              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)">
+            </div>
           </div>
+
+          <!-- TRUE / FALSE FIELDS -->
+          <div id="trueFalseFields" style="display: none;">
+            <label class="form-label fw-semibold mb-2">Correct Answer</label>
+            <div class="d-flex gap-4 p-3 bg-light rounded border">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="tf_correct" id="tfTrue" value="true" checked>
+                <label class="form-check-label fw-bold text-success" for="tfTrue">True</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="tf_correct" id="tfFalse" value="false">
+                <label class="form-check-label fw-bold text-danger" for="tfFalse">False</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- SHORT ANSWER FIELDS -->
+          <div id="shortAnswerFields" style="display: none;">
+            <label class="form-label fw-semibold">Accepted Answers (One per line)</label>
+            <textarea name="accepted_answers" class="form-control" rows="4" placeholder="Value Added Tax&#10;VAT&#10;value-added tax"></textarea>
+            <div class="form-text">Student answers will be trimmed and evaluated case-insensitively against any accepted answer line.</div>
+          </div>
+
+          <!-- PARAGRAPH FIELDS -->
+          <div id="paragraphFields" style="display: none;">
+            <div class="alert alert-info small mb-0">
+              <i class="bi bi-info-circle me-1"></i> Paragraph responses are stored for administrator review and are excluded from automatic percentage scoring.
+            </div>
+          </div>
+
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -129,4 +223,15 @@
     </div>
   </div>
 </div>
+
+<script>
+function toggleQuestionTypeFields() {
+  var qType = document.getElementById('questionTypeSelect').value;
+  document.getElementById('singleChoiceFields').style.display = (qType === 'single') ? 'block' : 'none';
+  document.getElementById('multipleChoiceFields').style.display = (qType === 'multiple') ? 'block' : 'none';
+  document.getElementById('trueFalseFields').style.display = (qType === 'true_false') ? 'block' : 'none';
+  document.getElementById('shortAnswerFields').style.display = (qType === 'short_answer') ? 'block' : 'none';
+  document.getElementById('paragraphFields').style.display = (qType === 'paragraph') ? 'block' : 'none';
+}
+</script>
 {% endblock %}

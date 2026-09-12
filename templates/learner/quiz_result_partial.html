@@ -17,23 +17,38 @@
     <!-- Overall Result Header Card -->
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-4 text-center">
-        {% if attempt.passed %}
-          <div class="mb-3">
+        {% if has_gradable %}
+    {% if attempt.passed %}
+        <div class="mb-3">
             <div class="display-3 mb-2">🎉</div>
             <h3 class="fw-bold text-success mb-1">Assessment Passed!</h3>
             <span class="badge bg-success fs-6 px-3 py-2 mb-3">PASS</span>
             <div class="h2 fw-bold text-dark my-2">{{ attempt.score }}%</div>
             <p class="text-muted small mb-0">Required passing score: <strong>{{ effective_passing_score }}%</strong></p>
-          </div>
-        {% else %}
-          <div class="mb-3">
+        </div>
+    {% else %}
+        <div class="mb-3">
             <div class="display-3 text-danger mb-2">❌</div>
             <h3 class="fw-bold text-danger mb-1">Assessment Not Passed</h3>
             <span class="badge bg-danger fs-6 px-3 py-2 mb-3">FAIL</span>
             <div class="h2 fw-bold text-dark my-2">{{ attempt.score }}%</div>
             <p class="text-muted small mb-0">Required passing score: <strong>{{ effective_passing_score }}%</strong></p>
-          </div>
-        {% endif %}
+        </div>
+    {% endif %}
+{% else %}
+    <div class="mb-3">
+        <div class="display-3 text-secondary mb-2">ℹ️</div>
+        <h3 class="fw-bold text-secondary mb-1">Score Not Available</h3>
+        <span class="badge bg-secondary fs-6 px-3 py-2 mb-3">N/A</span>
+        <div class="h2 fw-bold text-dark my-2">N/A</div>
+        <p class="text-muted small mb-0">All {{ requires_review_count }} question{{ requires_review_count|pluralize }} require manual review.</p>
+    </div>
+{% endif %}
+{% if requires_review_count > 0 %}
+    <div class="alert alert-warning mt-3" role="alert">
+        This attempt contains {{ requires_review_count }} question{{ requires_review_count|pluralize }} requiring manual review.
+    </div>
+{% endif %}
 
         <!-- Stat Badges Row -->
         <div class="row g-2 my-3 justify-content-center">
@@ -46,13 +61,19 @@
           <div class="col-6 col-sm-3">
             <div class="p-2 border rounded bg-success-subtle text-success">
               <div class="small">Correct Answers</div>
-              <div class="fw-bold fs-5">{{ attempt.correct_count }}</div>
+              <div class="fw-bold fs-5">{{ correct_count }}</div>
             </div>
           </div>
           <div class="col-6 col-sm-3">
             <div class="p-2 border rounded bg-danger-subtle text-danger">
               <div class="small">Wrong Answers</div>
               <div class="fw-bold fs-5">{{ wrong_count }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="p-2 border rounded bg-info-subtle text-info">
+              <div class="small">Requires Review</div>
+              <div class="fw-bold fs-5">{{ requires_review_count }}</div>
             </div>
           </div>
           <div class="col-6 col-sm-3">
@@ -96,23 +117,25 @@
         <div class="question-review-card {% if not forloop.first %}d-none{% endif %}" id="review-card-{{ forloop.counter0 }}">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="fw-bold text-dark mb-0">Question {{ rev.number }}: {{ rev.question_text }}</h6>
-            {% if rev.is_correct %}
+            {% if rev.is_correct is True %}
               <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i> Correct</span>
-            {% else %}
+            {% elif rev.is_correct is False %}
               <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i> Wrong</span>
+            {% else %}
+              <span class="badge bg-info text-dark"><i class="bi bi-clock-history me-1"></i> Requires Review / Not Automatically Graded</span>
             {% endif %}
           </div>
 
-          <div class="p-3 mb-3 rounded border {% if rev.is_correct %}bg-success-subtle border-success{% else %}bg-danger-subtle border-danger{% endif %}">
+          <div class="p-3 mb-3 rounded border {% if rev.is_correct is True %}bg-success-subtle border-success{% elif rev.is_correct is False %}bg-danger-subtle border-danger{% else %}bg-light border-secondary{% endif %}">
             <div class="mb-2">
               <span class="fw-semibold text-secondary me-2">Your Answer:</span>
-              <span class="fw-bold {% if rev.is_correct %}text-success{% else %}text-danger{% endif %}">
+              <span class="fw-bold {% if rev.is_correct is True %}text-success{% elif rev.is_correct is False %}text-danger{% else %}text-dark{% endif %}">
                 {{ rev.user_choice_text }}
               </span>
             </div>
             <div>
               <span class="fw-semibold text-secondary me-2">Correct Answer:</span>
-              <span class="fw-bold text-success">
+              <span class="fw-bold {% if rev.is_correct is True or rev.is_correct is False %}text-success{% else %}text-muted{% endif %}">
                 {{ rev.correct_choice_text }}
               </span>
             </div>

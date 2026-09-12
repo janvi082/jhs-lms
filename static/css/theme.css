@@ -9,6 +9,13 @@
   --lms-bg: #f7f7f8;
   --lms-text: #1f2937;
   --lms-radius: 10px;
+
+  /* Bootstrap 5 Theme Variable Overrides */
+  --bs-primary: #b3241c;
+  --bs-primary-rgb: 179, 36, 28;
+  --bs-link-color: #b3241c;
+  --bs-link-hover-color: #7d1712;
+  --bs-focus-ring-color: rgba(179, 36, 28, 0.25);
 }
 
 body {
@@ -24,6 +31,7 @@ body {
   background-color: #ffffff;
   border-bottom: 1px solid #e5e7eb;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  position: relative;
 }
 
 .navbar-custom .navbar-brand {
@@ -31,7 +39,16 @@ body {
   color: var(--lms-primary);
   font-size: 1.25rem;
 }
-
+.navbar-custom .navbar-brand-logo {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  display: block;
+  position: absolute;
+  left: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+}
 .card {
   border-radius: var(--lms-radius);
   border: 1px solid #e5e7eb;
@@ -44,20 +61,84 @@ body {
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
 }
 
+/* Primary Button - Red Theme Across All States */
 .btn-primary {
+  --bs-btn-color: #ffffff;
+  --bs-btn-bg: var(--lms-primary);
+  --bs-btn-border-color: var(--lms-primary);
+  --bs-btn-hover-color: #ffffff;
+  --bs-btn-hover-bg: var(--lms-primary-dark);
+  --bs-btn-hover-border-color: var(--lms-primary-dark);
+  --bs-btn-focus-shadow-rgb: 179, 36, 28;
+  --bs-btn-active-color: #ffffff;
+  --bs-btn-active-bg: var(--lms-primary-dark);
+  --bs-btn-active-border-color: var(--lms-primary-dark);
+  --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+  --bs-btn-disabled-color: #ffffff;
+  --bs-btn-disabled-bg: var(--lms-primary);
+  --bs-btn-disabled-border-color: var(--lms-primary);
+
   background-color: var(--lms-primary);
   border-color: var(--lms-primary);
+  color: #ffffff;
   border-radius: 6px;
   font-weight: 500;
   padding: 0.5rem 1.25rem;
 }
 
-.btn-primary:hover, .btn-primary:focus {
+.btn-primary:hover {
   background-color: var(--lms-primary-dark);
   border-color: var(--lms-primary-dark);
+  color: #ffffff;
 }
 
+.btn-primary:focus,
+.btn-primary.focus,
+.btn-primary:focus-visible {
+  background-color: var(--lms-primary-dark);
+  border-color: var(--lms-primary-dark);
+  color: #ffffff;
+  box-shadow: 0 0 0 0.25rem rgba(179, 36, 28, 0.25);
+}
+
+.btn-primary:active,
+.btn-primary.active,
+.btn-primary:active:focus,
+.btn-primary.active:focus,
+.btn-check:checked + .btn-primary,
+.btn-check:active + .btn-primary,
+.show > .btn-primary,
+.show > .btn-primary.dropdown-toggle {
+  background-color: var(--lms-primary-dark);
+  border-color: var(--lms-primary-dark);
+  color: #ffffff;
+  box-shadow: 0 0 0 0.25rem rgba(179, 36, 28, 0.25);
+}
+
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background-color: var(--lms-primary);
+  border-color: var(--lms-primary);
+  color: #ffffff;
+  opacity: 0.65;
+}
+
+/* Outline Primary Button - Red Theme Across All States */
 .btn-outline-primary {
+  --bs-btn-color: var(--lms-primary);
+  --bs-btn-border-color: var(--lms-primary);
+  --bs-btn-hover-color: #ffffff;
+  --bs-btn-hover-bg: var(--lms-primary);
+  --bs-btn-hover-border-color: var(--lms-primary);
+  --bs-btn-focus-shadow-rgb: 179, 36, 28;
+  --bs-btn-active-color: #ffffff;
+  --bs-btn-active-bg: var(--lms-primary);
+  --bs-btn-active-border-color: var(--lms-primary);
+  --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+  --bs-btn-disabled-color: var(--lms-primary);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--lms-primary);
+
   color: var(--lms-primary);
   border-color: var(--lms-primary);
 }
@@ -66,6 +147,37 @@ body {
   background-color: var(--lms-primary);
   border-color: var(--lms-primary);
   color: #ffffff;
+}
+
+.btn-outline-primary:focus,
+.btn-outline-primary.focus,
+.btn-outline-primary:focus-visible {
+  background-color: var(--lms-primary);
+  border-color: var(--lms-primary);
+  color: #ffffff;
+  box-shadow: 0 0 0 0.25rem rgba(179, 36, 28, 0.25);
+}
+
+.btn-outline-primary:active,
+.btn-outline-primary.active,
+.btn-outline-primary:active:focus,
+.btn-outline-primary.active:focus,
+.btn-check:checked + .btn-outline-primary,
+.btn-check:active + .btn-outline-primary,
+.show > .btn-outline-primary,
+.show > .btn-outline-primary.dropdown-toggle {
+  background-color: var(--lms-primary-dark);
+  border-color: var(--lms-primary-dark);
+  color: #ffffff;
+  box-shadow: 0 0 0 0.25rem rgba(179, 36, 28, 0.25);
+}
+
+.btn-outline-primary:disabled,
+.btn-outline-primary.disabled {
+  color: var(--lms-primary);
+  background-color: transparent;
+  border-color: var(--lms-primary);
+  opacity: 0.65;
 }
 
 .progress {
@@ -173,4 +285,16 @@ body {
   flex-grow: 1;
   padding: 2rem;
   background-color: var(--lms-bg);
+}
+.login-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+@media (max-width: 991.98px) {
+  .navbar-floating-logo {
+    left: 16px;
+  }
 }

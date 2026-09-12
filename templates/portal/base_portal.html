@@ -30,6 +30,7 @@
         <i class="bi bi-patch-question"></i> Quizzes
       </a>
 
+
       <div class="nav-header">Learners</div>
       <a class="nav-link {% if 'learners' in request.path and 'progress' not in request.path %}active{% endif %}" href="{% url 'portal_learners_list' %}">
         <i class="bi bi-people"></i> Learners

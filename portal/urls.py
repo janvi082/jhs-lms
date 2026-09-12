@@ -31,7 +31,11 @@ urlpatterns = [
     path('topics/<int:topic_id>/questions/', views.portal_questions_manage, name='portal_questions_manage'),
     path('topics/<int:topic_id>/questions/add/', views.portal_question_add, name='portal_question_add'),
     path('questions/<int:question_id>/delete/', views.portal_question_delete, name='portal_question_delete'),
-    
+    # Admin attempt history
+    path('admin/attempts/', views.admin_attempts_list, name='admin_attempts_list'),
+    path('admin/attempts/<int:attempt_id>/', views.admin_attempt_detail, name='admin_attempt_detail'),
+    path('learners/<int:learner_id>/topics/<int:topic_id>/attempts/', views.admin_learner_topic_attempts, name='admin_learner_topic_attempts'),
+    path('admin/attempts/<int:attempt_id>/review/<int:response_id>/', views.admin_attempt_review, name='admin_attempt_review'),
     # Global Overviews
     path('videos/', views.portal_videos_overview, name='portal_videos_overview'),
     path('materials/', views.portal_materials_overview, name='portal_materials_overview'),

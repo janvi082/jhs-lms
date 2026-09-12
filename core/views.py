@@ -82,7 +82,22 @@ def topic_detail(request, slug, topic_id):
     
     videos = list(topic.videos.all())
     resources = list(topic.resources.all())
-    attempts = list(QuizAttempt.objects.filter(user=request.user, topic=topic).order_by('-created_at'))
+    # Prepare attempt data with review-aware display
+    attempts_qs = QuizAttempt.objects.filter(user=request.user, topic=topic).order_by('-created_at')
+    attempts_data = []
+    for a in attempts_qs:
+        # Does any response still need manual review?
+        requires_review = a.responses.filter(is_correct__isnull=True).exists()
+        # Number of graded responses (is_correct not null)
+        graded_count = a.responses.filter(is_correct__isnull=False).count()
+        # Show numeric score only if at least one response is graded
+        display_score = a.score if graded_count > 0 else None
+        attempts_data.append({
+            'attempt': a,
+            'requires_review': requires_review,
+            'graded': graded_count > 0,
+            'display_score': display_score,
+        })
     
     next_topic = Topic.objects.filter(
         subject=topic.subject,
@@ -99,7 +114,7 @@ def topic_detail(request, slug, topic_id):
         'display_status': display_status,
         'videos': videos,
         'resources': resources,
-        'attempts': attempts,
+        'attempts_data': attempts_data,
         'next_topic': next_topic,
         'effective_passing_score': topic.effective_passing_score,
         'required_question_count': site_config.default_required_question_count,

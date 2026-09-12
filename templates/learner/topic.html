@@ -127,7 +127,7 @@
     </div>
 
     <!-- Attempt History -->
-    {% if attempts %}
+    {% if attempts_data %}
     <div class="card bg-white border-0 shadow-sm mb-4">
       <div class="card-body p-4">
         <h6 class="fw-bold text-dark mb-3"><i class="bi bi-history me-1"></i> Attempt History</h6>
@@ -141,15 +141,25 @@
               </tr>
             </thead>
             <tbody>
-              {% for att in attempts %}
+              {% for item in attempts_data %}
               <tr>
-                <td class="small">#{{ att.attempt_number }}</td>
-                <td class="fw-bold small">{{ att.score }}%</td>
-                <td>
-                  {% if att.passed %}
-                    <span class="badge bg-success small">PASS</span>
+                <td class="small">#{{ item.attempt.attempt_number }}</td>
+                <td class="fw-bold small">
+                  {% if item.graded %}
+                    {{ item.display_score }}%
                   {% else %}
-                    <span class="badge bg-danger small">FAIL</span>
+                    <span class="text-muted">N/A</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if item.requires_review %}
+                    <span class="badge bg-warning text-dark small">Requires Review</span>
+                  {% else %}
+                    {% if item.attempt.passed %}
+                      <span class="badge bg-success small">PASS</span>
+                    {% else %}
+                      <span class="badge bg-danger small">FAIL</span>
+                    {% endif %}
                   {% endif %}
                 </td>
               </tr>

@@ -40,7 +40,7 @@
               <span class="{{ t.display_status.text_class }} fw-bold fs-5" style="width: 24px; text-align: center;">
                 {{ t.display_status.icon }}
               </span>
-              <span class="text-dark small fw-medium">{{ t.topic.name }}</span>
+              <a href="{% url 'admin_learner_topic_attempts' learner_id=learner.id topic_id=t.topic.id %}" class="text-dark small fw-medium">{{ t.topic.name }}</a>
             </div>
             <div>
               {% if t.progress and t.progress.attempts_count > 0 %}

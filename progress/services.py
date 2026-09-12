@@ -132,28 +132,111 @@ def get_overall_learner_progress(user):
 
 def submit_quiz_attempt(user, topic, submitted_answers):
     """
-    Grading engine and attempt logging.
-    submitted_answers: dict mapping question_id (int) -> selected_choice_id (int)
+    Grading engine and attempt logging supporting 5 question types:
+    Single Choice, Multiple Choice, True/False, Short Answer, Paragraph.
+    Permanently creates QuizResponse records for every question.
     """
+    from quizzes.models import QuizResponse
+
     questions = list(topic.questions.prefetch_related('choices').all())
     total_questions = len(questions)
     
     if total_questions == 0:
         raise ValueError("Cannot take quiz on a topic with zero questions.")
         
-    correct_count = 0
-    for q in questions:
-        selected_choice_id = submitted_answers.get(q.id) or submitted_answers.get(str(q.id))
-        if selected_choice_id:
-            try:
-                selected_choice_id = int(selected_choice_id)
-                correct_choice = next((c for c in q.choices.all() if c.is_correct), None)
-                if correct_choice and correct_choice.id == selected_choice_id:
-                    correct_count += 1
-            except (ValueError, TypeError):
-                pass
+    def get_post_val(key):
+        if hasattr(submitted_answers, 'getlist'):
+            vals = submitted_answers.getlist(key) or submitted_answers.getlist(str(key))
+            if vals:
+                return vals
+        v = submitted_answers.get(key)
+        if v is None:
+            v = submitted_answers.get(str(key))
+        if v is None:
+            return []
+        if isinstance(v, (list, tuple)):
+            return v
+        return [v]
 
-    score = int(round((correct_count / total_questions) * 100))
+    correct_count = 0
+    gradable_count = 0
+    response_objects = []
+
+    for q in questions:
+        raw_vals = get_post_val(q.id)
+        is_correct = None
+        text_resp = ''
+        selected_choice_ids = []
+
+        if q.question_type in (Question.TYPE_SINGLE_CHOICE, Question.TYPE_TRUE_FALSE):
+            # Only process if an answer was provided.
+            if raw_vals and raw_vals[0]:
+                # Count as gradable
+                gradable_count += 1
+                try:
+                    selected_choice_id = int(raw_vals[0])
+                    selected_choice_ids = [selected_choice_id]
+                    correct_choice = next((c for c in q.choices.all() if c.is_correct), None)
+                    if correct_choice and correct_choice.id == selected_choice_id:
+                        is_correct = True
+                        correct_count += 1
+                    else:
+                        is_correct = False
+                except (ValueError, TypeError):
+                    is_correct = False
+            else:
+                # No answer supplied – treat as not responded
+                is_correct = None
+
+        elif q.question_type == Question.TYPE_MULTIPLE_CHOICE:
+            # Only process if answers were provided.
+            if raw_vals:
+                # Count as gradable
+                gradable_count += 1
+                try:
+                    selected_choice_ids = [int(v) for v in raw_vals if v]
+                    selected_set = set(selected_choice_ids)
+                    correct_set = {c.id for c in q.choices.all() if c.is_correct}
+                    if selected_set and selected_set == correct_set:
+                        is_correct = True
+                        correct_count += 1
+                    else:
+                        is_correct = False
+                except (ValueError, TypeError):
+                    is_correct = False
+            else:
+                # No answer supplied – treat as not responded
+                is_correct = None
+
+        elif q.question_type == Question.TYPE_SHORT_ANSWER:
+            gradable_count += 1
+            text_resp = raw_vals[0] if raw_vals else ''
+            trimmed_text = text_resp.strip()
+            accepted = q.get_accepted_answers_list()
+            if trimmed_text and any(trimmed_text.lower() == acc.strip().lower() for acc in accepted):
+                is_correct = True
+                correct_count += 1
+            else:
+                is_correct = False
+
+        elif q.question_type == Question.TYPE_PARAGRAPH:
+            text_resp = raw_vals[0] if raw_vals else ''
+            is_correct = None
+
+        # Append response only if it should be recorded:
+        # - For paragraph questions, always record (is_correct is None).
+        # - For other question types, record only if is_correct is not None (i.e., an answer was provided).
+        if q.question_type == Question.TYPE_PARAGRAPH:
+            response_objects.append((q, is_correct, text_resp, selected_choice_ids))
+        elif is_correct is not None:
+            response_objects.append((q, is_correct, text_resp, selected_choice_ids))
+
+    if gradable_count > 0:
+        score = int(round((correct_count / gradable_count) * 100))
+    else:
+        # No automatically gradable questions; set score to 0 to indicate N/A
+        score = 0
+
     passing_score_used = topic.effective_passing_score
     passed = score >= passing_score_used
     
@@ -170,6 +253,17 @@ def submit_quiz_attempt(user, topic, submitted_answers):
         passed=passed,
         passing_score_used=passing_score_used
     )
+
+    for q, is_corr, txt, choice_ids in response_objects:
+        resp = QuizResponse.objects.create(
+            attempt=attempt,
+            question=q,
+            is_correct=is_corr,
+            text_response=txt
+        )
+        if choice_ids:
+            valid_choices = [c for c in q.choices.all() if c.id in choice_ids]
+            resp.selected_choices.set(valid_choices)
     
     tp, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
     tp.attempts_count += 1
@@ -186,3 +280,37 @@ def submit_quiz_attempt(user, topic, submitted_answers):
             
     tp.save()
     return attempt, tp
+
+def recalculate_attempt_score(attempt):
+    """Recalculate correct/wrong counts, score, and pass/fail for an existing attempt.
+    Does NOT modify total_questions (original number of questions)."""
+    correct = attempt.responses.filter(is_correct=True).count()
+    wrong = attempt.responses.filter(is_correct=False).count()
+    gradable = correct + wrong
+    attempt.correct_count = correct
+    # total_questions remains unchanged
+    if gradable > 0:
+        attempt.score = int(round((correct / gradable) * 100))
+    else:
+        # No gradable questions – keep numeric 0; UI will show N/A
+        attempt.score = 0
+    # Pass only if there is a numeric score and meets threshold
+    attempt.passed = (attempt.score >= attempt.passing_score_used) if gradable > 0 else False
+    attempt.save()
+
+    # Synchronize TopicProgress.best_score based on all graded attempts for this learner and topic
+    from django.db.models import Max
+    from quizzes.models import QuizAttempt
+    best = QuizAttempt.objects.filter(
+        user=attempt.user,
+        topic=attempt.topic,
+        responses__is_correct__isnull=False
+    ).distinct().aggregate(Max('score'))['score__max']
+    best_score = best if best is not None else 0
+    from .models import TopicProgress
+    tp, _ = TopicProgress.objects.get_or_create(user=attempt.user, topic=attempt.topic)
+    tp.best_score = best_score
+    tp.latest_score = attempt.score
+    tp.save()
+
+

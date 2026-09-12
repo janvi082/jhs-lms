@@ -26,24 +26,62 @@
           <div class="questions-list mb-4">
             {% for question in questions %}
             <div class="mb-4 p-3 bg-light rounded border">
-              <p class="fw-semibold text-dark mb-3">
-                Question {{ forloop.counter }}: {{ question.text }}
-              </p>
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <p class="fw-semibold text-dark mb-0">
+                  Question {{ forloop.counter }}: {{ question.text }}
+                </p>
+                {% if question.required %}
+                  <span class="badge bg-danger ms-2" style="font-size: 0.7rem;">Required</span>
+                {% else %}
+                  <span class="badge bg-secondary ms-2" style="font-size: 0.7rem;">Optional</span>
+                {% endif %}
+              </div>
               
-              <div class="choices-list ms-2">
-                {% for choice in question.choices.all %}
-                <div class="form-check mb-2">
-                  <input class="form-check-input" 
-                         type="radio" 
+              <div class="choices-list ms-2 mt-3">
+                {% if question.question_type == 'single' or question.question_type == 'true_false' %}
+                  {% for choice in question.choices.all %}
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" 
+                           type="radio" 
+                           name="{{ question.id }}" 
+                           id="choice_{{ choice.id }}" 
+                           value="{{ choice.id }}" 
+                           {% if question.required %}required{% endif %}>
+                    <label class="form-check-label text-dark" for="choice_{{ choice.id }}">
+                      {{ choice.text }}
+                    </label>
+                  </div>
+                  {% endfor %}
+
+                {% elif question.question_type == 'multiple' %}
+                  <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i> Select all correct answers:</div>
+                  {% for choice in question.choices.all %}
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" 
+                           type="checkbox" 
+                           name="{{ question.id }}" 
+                           id="choice_{{ choice.id }}" 
+                           value="{{ choice.id }}">
+                    <label class="form-check-label text-dark" for="choice_{{ choice.id }}">
+                      {{ choice.text }}
+                    </label>
+                  </div>
+                  {% endfor %}
+
+                {% elif question.question_type == 'short_answer' %}
+                  <input type="text" 
                          name="{{ question.id }}" 
-                         id="choice_{{ choice.id }}" 
-                         value="{{ choice.id }}" 
-                         required>
-                  <label class="form-check-label text-dark" for="choice_{{ choice.id }}">
-                    {{ choice.text }}
-                  </label>
-                </div>
-                {% endfor %}
+                         class="form-control" 
+                         placeholder="Type your answer here..." 
+                         {% if question.required %}required{% endif %}>
+
+                {% elif question.question_type == 'paragraph' %}
+                  <textarea name="{{ question.id }}" 
+                            class="form-control" 
+                            rows="4" 
+                            placeholder="Type your response here..." 
+                            {% if question.required %}required{% endif %}></textarea>
+                {% endif %}
               </div>
             </div>
             {% endfor %}

@@ -2,17 +2,19 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.db import transaction
+from django.db.models import ProtectedError
 import secrets
 import string
 
 from content.models import Subject, Topic, Video, Resource, SiteConfig
-from quizzes.models import Question, Choice, QuizAttempt
+from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
 from accounts.models import User
 from progress.models import TopicProgress
 from progress.services import (
     get_subject_progress_summary,
     get_overall_learner_progress,
-    get_topic_display_status
+    get_topic_display_status,
+    recalculate_attempt_score,
 )
 from .decorators import admin_required
 from .forms import (
@@ -377,44 +379,120 @@ def portal_question_add(request, topic_id):
     topic = get_object_or_404(Topic, id=topic_id)
     if request.method == 'POST':
         question_text = request.POST.get('question_text', '').strip()
-        order = int(request.POST.get('order', topic.questions.count() + 1))
+        question_type = request.POST.get('question_type', Question.TYPE_SINGLE_CHOICE)
+        is_required = request.POST.get('required') in ('true', 'True', 'on', '1') or 'required' in request.POST
+        accepted_answers = request.POST.get('accepted_answers', '').strip()
         
-        choice_texts = [
-            request.POST.get(f'choice_{i}', '').strip() 
-            for i in range(1, 7) 
-            if request.POST.get(f'choice_{i}', '').strip()
-        ]
+        try:
+            order = int(request.POST.get('order', topic.questions.count() + 1))
+        except ValueError:
+            order = topic.questions.count() + 1
         
-        correct_index = request.POST.get('correct_choice')
-        
-        # VALIDATION RULES: >= 2 choices, exactly 1 marked correct
         if not question_text:
             messages.error(request, "Question text cannot be empty.")
             return redirect('portal_questions_manage', topic_id=topic.id)
-            
-        if len(choice_texts) < 2:
-            messages.error(request, "Each question must have at least 2 answer choices.")
-            return redirect('portal_questions_manage', topic_id=topic.id)
-            
-        if correct_index is None:
-            messages.error(request, "Please mark exactly one choice as the correct answer.")
-            return redirect('portal_questions_manage', topic_id=topic.id)
-            
-        try:
-            correct_idx = int(correct_index)
-        except ValueError:
-            messages.error(request, "Invalid correct choice selection.")
-            return redirect('portal_questions_manage', topic_id=topic.id)
 
-        with transaction.atomic():
-            question = Question.objects.create(topic=topic, text=question_text, order=order)
-            for idx, c_text in enumerate(choice_texts, start=1):
-                Choice.objects.create(
-                    question=question,
-                    text=c_text,
-                    is_correct=(idx == correct_idx)
+        if question_type == Question.TYPE_SINGLE_CHOICE:
+            choice_texts = [
+                request.POST.get(f'choice_{i}', '').strip() 
+                for i in range(1, 7) 
+                if request.POST.get(f'choice_{i}', '').strip()
+            ]
+            correct_index = request.POST.get('correct_choice')
+            if len(choice_texts) < 2:
+                messages.error(request, "Single Choice questions must have at least 2 answer choices.")
+                return redirect('portal_questions_manage', topic_id=topic.id)
+            if not correct_index:
+                messages.error(request, "Please mark exactly one choice as the correct answer.")
+                return redirect('portal_questions_manage', topic_id=topic.id)
+            try:
+                correct_idx = int(correct_index)
+            except ValueError:
+                messages.error(request, "Invalid correct choice selection.")
+                return redirect('portal_questions_manage', topic_id=topic.id)
+
+            with transaction.atomic():
+                question = Question.objects.create(
+                    topic=topic,
+                    text=question_text,
+                    question_type=Question.TYPE_SINGLE_CHOICE,
+                    required=is_required,
+                    order=order
                 )
-        messages.success(request, "Question and answer options saved successfully.")
+                for idx, c_text in enumerate(choice_texts, start=1):
+                    Choice.objects.create(
+                        question=question,
+                        text=c_text,
+                        is_correct=(idx == correct_idx)
+                    )
+
+        elif question_type == Question.TYPE_MULTIPLE_CHOICE:
+            choice_texts = [
+                request.POST.get(f'choice_{i}', '').strip() 
+                for i in range(1, 7) 
+                if request.POST.get(f'choice_{i}', '').strip()
+            ]
+            correct_indices = [
+                int(i) for i in request.POST.getlist('correct_choices') if i.isdigit()
+            ]
+            if len(choice_texts) < 2:
+                messages.error(request, "Multiple Choice questions must have at least 2 answer choices.")
+                return redirect('portal_questions_manage', topic_id=topic.id)
+            if not correct_indices:
+                messages.error(request, "Please mark at least one choice as a correct answer.")
+                return redirect('portal_questions_manage', topic_id=topic.id)
+
+            with transaction.atomic():
+                question = Question.objects.create(
+                    topic=topic,
+                    text=question_text,
+                    question_type=Question.TYPE_MULTIPLE_CHOICE,
+                    required=is_required,
+                    order=order
+                )
+                for idx, c_text in enumerate(choice_texts, start=1):
+                    Choice.objects.create(
+                        question=question,
+                        text=c_text,
+                        is_correct=(idx in correct_indices)
+                    )
+
+        elif question_type == Question.TYPE_TRUE_FALSE:
+            tf_correct = request.POST.get('tf_correct', 'true').lower()
+            with transaction.atomic():
+                question = Question.objects.create(
+                    topic=topic,
+                    text=question_text,
+                    question_type=Question.TYPE_TRUE_FALSE,
+                    required=is_required,
+                    order=order
+                )
+                Choice.objects.create(question=question, text="True", is_correct=(tf_correct == 'true'))
+                Choice.objects.create(question=question, text="False", is_correct=(tf_correct == 'false'))
+
+        elif question_type == Question.TYPE_SHORT_ANSWER:
+            if not accepted_answers:
+                messages.error(request, "Short Answer questions require at least one accepted answer.")
+                return redirect('portal_questions_manage', topic_id=topic.id)
+            Question.objects.create(
+                topic=topic,
+                text=question_text,
+                question_type=Question.TYPE_SHORT_ANSWER,
+                required=is_required,
+                accepted_answers=accepted_answers,
+                order=order
+            )
+
+        elif question_type == Question.TYPE_PARAGRAPH:
+            Question.objects.create(
+                topic=topic,
+                text=question_text,
+                question_type=Question.TYPE_PARAGRAPH,
+                required=is_required,
+                order=order
+            )
+
+        messages.success(request, "Question saved successfully.")
     return redirect('portal_questions_manage', topic_id=topic.id)
 
 @admin_required
@@ -422,8 +500,11 @@ def portal_question_delete(request, question_id):
     question = get_object_or_404(Question, id=question_id)
     topic_id = question.topic_id
     if request.method == 'POST':
-        question.delete()
-        messages.success(request, "Question deleted successfully.")
+        try:
+            question.delete()
+            messages.success(request, "Question deleted successfully.")
+        except ProtectedError:
+            messages.error(request, "Cannot delete this question because it is referenced by existing quiz attempts.")
     return redirect('portal_questions_manage', topic_id=topic_id)
 
 # --- GLOBAL OVERVIEWS (VIDEOS, MATERIALS, QUIZZES) ---
@@ -453,6 +534,132 @@ def portal_quizzes_overview(request):
         })
         
     return render(request, 'portal/quizzes_list.html', {'quiz_data': quiz_data, 'required_count': site_config.default_required_question_count})
+
+# --- ADMIN ATTEMPT HISTORY ---
+
+@admin_required
+def admin_attempts_list(request):
+    attempts = (
+        QuizAttempt.objects.select_related('user', 'topic')
+        .prefetch_related('responses')
+        .order_by('-created_at')
+    )
+    attempts_data = []
+    for a in attempts:
+        requires_review = a.responses.filter(is_correct__isnull=True).exists()
+        gradable = a.responses.filter(is_correct__isnull=False).count()
+        display_score = a.score if gradable > 0 else None  # None -> N/A in template
+        attempts_data.append({
+            'attempt': a,
+            'requires_review': requires_review,
+            'display_score': display_score,
+        })
+    return render(request, 'portal/admin_attempts_list.html', {'attempts_data': attempts_data})
+
+@admin_required
+def admin_attempt_detail(request, attempt_id):
+    attempt = get_object_or_404(QuizAttempt, id=attempt_id)
+    responses = (
+        attempt.responses.select_related('question')
+        .prefetch_related('selected_choices')
+        .order_by('id')
+    )
+    resp_data = []
+    for r in responses:
+        q = r.question
+        # learner answer
+        if q.question_type in [Question.TYPE_SINGLE_CHOICE, Question.TYPE_MULTIPLE_CHOICE, Question.TYPE_TRUE_FALSE]:
+            learner_answer = ", ".join([c.text for c in r.selected_choices.all()])
+        else:
+            learner_answer = r.text_response or ""
+        # correct answer for gradable types
+        correct_answer = None
+        if q.is_gradable:
+            if q.question_type == Question.TYPE_SINGLE_CHOICE:
+                correct = q.choices.filter(is_correct=True).first()
+                correct_answer = correct.text if correct else ''
+            elif q.question_type == Question.TYPE_MULTIPLE_CHOICE:
+                correct = q.choices.filter(is_correct=True)
+                correct_answer = ", ".join([c.text for c in correct])
+            elif q.question_type == Question.TYPE_TRUE_FALSE:
+                correct = q.choices.filter(is_correct=True).first()
+                correct_answer = correct.text if correct else ''
+            elif q.question_type == Question.TYPE_SHORT_ANSWER:
+                correct_answer = q.accepted_answers
+        resp_data.append({
+            'response': r,
+            'question_text': q.text,
+            'question_type': q.get_question_type_display(),
+            'learner_answer': learner_answer,
+            'correct_answer': correct_answer,
+            'is_pending': r.is_correct is None,
+        })
+    # compute summary for display
+    gradable = attempt.responses.filter(is_correct__isnull=False).count()
+    display_score = attempt.score if gradable > 0 else None
+    context = {
+        'attempt': attempt,
+        'responses_data': resp_data,
+        'display_score': display_score,
+    }
+    return render(request, 'portal/admin_attempt_detail.html', context)
+
+@admin_required
+def admin_learner_topic_attempts(request, learner_id, topic_id):
+    learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
+    topic = get_object_or_404(Topic, id=topic_id)
+    attempts = (
+        QuizAttempt.objects.filter(user=learner, topic=topic)
+        .select_related('user', 'topic')
+        .prefetch_related('responses')
+        .order_by('-created_at')
+    )
+    attempts_data = []
+    for a in attempts:
+        requires_review = a.responses.filter(is_correct__isnull=True).exists()
+        gradable = a.responses.filter(is_correct__isnull=False).count()
+        display_score = a.score if gradable > 0 else None
+        attempts_data.append({
+            'attempt': a,
+            'requires_review': requires_review,
+            'display_score': display_score,
+            'is_gradable': gradable > 0,
+        })
+    context = {
+        'learner': learner,
+        'topic': topic,
+        'attempts_data': attempts_data,
+    }
+    return render(request, 'portal/admin_topic_attempts.html', context)
+
+@admin_required
+def admin_attempt_review(request, attempt_id, response_id):
+    if request.method != 'POST':
+        return redirect('admin_attempt_detail', attempt_id=attempt_id)
+    action = request.POST.get('action')
+    response = get_object_or_404(QuizResponse, id=response_id, attempt_id=attempt_id)
+    if response.is_correct is not None:
+        messages.error(request, "This response has already been graded and cannot be modified.")
+        return redirect('admin_attempt_detail', attempt_id=attempt_id)
+    if action == 'approve':
+        response.is_correct = True
+        messages.success(request, "Response approved as correct.")
+    elif action == 'reject':
+        response.is_correct = False
+        messages.success(request, "Response marked as incorrect.")
+    else:
+        messages.error(request, "Invalid review action.")
+        return redirect('admin_attempt_detail', attempt_id=attempt_id)
+    response.save()
+    # Recalculate attempt totals (score, etc.)
+    attempt = response.attempt
+    recalculate_attempt_score(attempt)
+
+    attempt.refresh_from_db()
+
+    return redirect('admin_attempt_detail', attempt_id=attempt_id)
+
+# --- GLOBAL OVERVIEWS (VIDEOS, MATERIALS, QUIZZES) ---
 
 # --- LEARNERS MANAGEMENT ---
 

@@ -94,9 +94,12 @@ class ResourceForm(forms.ModelForm):
 class QuestionForm(forms.ModelForm):
     class Meta:
         model = Question
-        fields = ['text', 'order']
+        fields = ['text', 'question_type', 'required', 'accepted_answers', 'order']
         widgets = {
             'text': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Enter question text...'}),
+            'question_type': forms.Select(attrs={'class': 'form-select'}),
+            'required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'accepted_answers': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Enter accepted answers, one per line...'}),
             'order': forms.NumberInput(attrs={'class': 'form-control'}),
         }
 
