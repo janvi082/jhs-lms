@@ -1,13 +1,19 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseBadRequest
+from django.core.exceptions import PermissionDenied
 from content.models import Topic
 from progress.services import submit_quiz_attempt, get_topic_display_status
 from .models import Question, Choice, QuizAttempt
+from access.services import has_topic_access
+
 
 @login_required
 def quiz_modal(request, slug, topic_id):
     topic = get_object_or_404(Topic, id=topic_id, subject__slug=slug, is_active=True)
+    # Access control: deny if learner lacks access to the topic
+    if not has_topic_access(request.user, topic):
+        raise PermissionDenied
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
         
@@ -35,8 +41,6 @@ def quiz_modal(request, slug, topic_id):
                 'question_text': q.text,
                 'user_choice_id': user_choice.id if user_choice else None,
                 'user_choice_text': user_choice.text if user_choice else 'No answer selected',
-                'correct_choice_id': correct_choice.id if correct_choice else None,
-                'correct_choice_text': correct_choice.text if correct_choice else 'N/A',
                 'is_correct': is_correct,
             })
             
@@ -54,8 +58,11 @@ def quiz_modal(request, slug, topic_id):
 
 @login_required
 def quiz_result(request, slug, topic_id, attempt_id):
+    # Retrieve the topic and attempt, enforce ownership and topic access
     topic = get_object_or_404(Topic, id=topic_id, subject__slug=slug, is_active=True)
     attempt = get_object_or_404(QuizAttempt, id=attempt_id, user=request.user, topic=topic)
+    if not has_topic_access(request.user, topic):
+        raise PermissionDenied
     
     responses = list(attempt.responses.select_related('question').prefetch_related('selected_choices', 'question__choices').all())
     question_reviews = []
@@ -101,7 +108,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
                 'question_type': q.question_type,
                 'question_text': q.text,
                 'user_choice_text': user_choice_text,
-                'correct_choice_text': correct_choice_text,
+                'correct_choice_text': correct_choice_text if getattr(request.user, "is_admin_user", False) else '',
                 'is_correct': resp.is_correct,
             })
     else:
@@ -117,7 +124,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
                     'number': idx,
                     'question_text': item.get('question_text') or (q_obj.text if q_obj else f'Question #{idx}'),
                     'user_choice_text': item.get('user_choice_text'),
-                    'correct_choice_text': item.get('correct_choice_text'),
+                    'correct_choice_text': item.get('correct_choice_text') if getattr(request.user, "is_admin_user", False) else '',
                     'is_correct': item.get('is_correct'),
                 })
         else:
@@ -130,6 +137,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
     gradable_questions = correct_count + wrong_count
     has_gradable = gradable_questions > 0
 
+    # Determine next topic (simple progression)
     next_topic = Topic.objects.filter(
         subject=topic.subject,
         is_active=True,
@@ -158,6 +166,9 @@ def quiz_submit(request, topic_id):
         return HttpResponseBadRequest("POST required")
         
     topic = get_object_or_404(Topic, id=topic_id, is_active=True)
+    # Access control: deny if learner lacks access to the topic
+    if not has_topic_access(request.user, topic):
+        raise PermissionDenied
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
         

@@ -81,8 +81,14 @@ def get_subject_progress_summary(user, subject):
     """
     Calculates Progress %, Understanding %, and Assessments Passed for a subject.
     """
-    active_topics = subject.topics.filter(is_active=True)
-    total_active_topics = active_topics.count()
+    all_active_topics = subject.topics.filter(is_active=True)
+    if user.is_authenticated and not user.is_admin_user:
+        from access.services import has_topic_access
+        active_topics = [t for t in all_active_topics if has_topic_access(user, t)]
+    else:
+        active_topics = list(all_active_topics)
+
+    total_active_topics = len(active_topics)
     
     if total_active_topics == 0:
         return {
@@ -93,7 +99,7 @@ def get_subject_progress_summary(user, subject):
             'assessments_passed_display': "0 / 0",
         }
 
-    topic_ids = active_topics.values_list('id', flat=True)
+    topic_ids = [t.id for t in active_topics]
     user_progresses = TopicProgress.objects.filter(user=user, topic_id__in=topic_ids) if user.is_authenticated else []
     progress_map = {p.topic_id: p for p in user_progresses}
     

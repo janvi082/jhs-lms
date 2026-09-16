@@ -58,18 +58,14 @@
                 <a href="{% url 'portal_learner_progress_detail' item.learner.id %}" class="btn btn-outline-primary">
                   View Progress
                 </a>
+                <a href="{% url 'portal_learner_access' learner_id=item.learner.id %}" class="btn btn-outline-info">Access</a>
                 <form action="{% url 'portal_learner_toggle_status' item.learner.id %}" method="post" class="d-inline">
                   {% csrf_token %}
                   <button type="submit" class="btn btn-outline-{% if item.learner.is_active %}warning{% else %}success{% endif %}">
                     {% if item.learner.is_active %}Deactivate{% else %}Activate{% endif %}
                   </button>
                 </form>
-                <form action="{% url 'portal_learner_reset_password' item.learner.id %}" method="post" class="d-inline" onsubmit="return confirm('Reset password for @{{ item.learner.username }}?');">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-outline-secondary">
-                    Reset Password
-                  </button>
-                </form>
+                <a href="{% url 'portal_learner_reset_password' item.learner.id %}" class="btn btn-outline-secondary">Reset Password</a>
               </div>
             </td>
           </tr>

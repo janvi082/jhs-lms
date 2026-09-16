@@ -133,12 +133,6 @@
                 {{ rev.user_choice_text }}
               </span>
             </div>
-            <div>
-              <span class="fw-semibold text-secondary me-2">Correct Answer:</span>
-              <span class="fw-bold {% if rev.is_correct is True or rev.is_correct is False %}text-success{% else %}text-muted{% endif %}">
-                {{ rev.correct_choice_text }}
-              </span>
-            </div>
           </div>
         </div>
         {% endfor %}
@@ -200,4 +194,5 @@ function showReviewQuestion(index) {
   if (nextBtn) nextBtn.disabled = (currentReviewIndex === totalReviewQuestions - 1);
 }
 </script>
+{% block extra_js %}{% endblock %}
 {% endblock %}

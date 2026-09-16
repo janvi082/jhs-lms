@@ -46,6 +46,9 @@ urlpatterns = [
     path('learners/add/', views.portal_learner_add, name='portal_learner_add'),
     path('learners/<int:learner_id>/toggle-status/', views.portal_learner_toggle_status, name='portal_learner_toggle_status'),
     path('learners/<int:learner_id>/reset-password/', views.portal_learner_reset_password, name='portal_learner_reset_password'),
+    # New Access UI URLs
+    path('learners/<int:learner_id>/access/', views.portal_learner_access, name='portal_learner_access'),
+    path('learners/<int:learner_id>/access/save/', views.portal_learner_access_save, name='portal_learner_access_save'),
     path('progress/', views.portal_learners_list, name='portal_progress'),
     path('learners/<int:learner_id>/', views.portal_learner_progress_detail, name='portal_learner_progress_detail'),
     

@@ -1,6 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.template.response import TemplateResponse
 from django.contrib import messages
-from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
+from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.db import transaction
 from django.db.models import ProtectedError
 import secrets
@@ -17,6 +18,8 @@ from progress.services import (
     recalculate_attempt_score,
 )
 from .decorators import admin_required
+from access.models import LearnerAccess
+from access import services as access_services
 from .forms import (
     SubjectForm,
     TopicForm,
@@ -25,8 +28,11 @@ from .forms import (
     ResourceForm,
     QuestionForm,
     LearnerForm,
-    SiteConfigForm
+    LearnerPasswordResetForm,
+    SiteConfigForm,
+    LearnerAccessForm,
 )
+
 
 # --- SUBJECTS MANAGEMENT ---
 
@@ -711,12 +717,21 @@ def portal_learner_toggle_status(request, learner_id):
 @admin_required
 def portal_learner_reset_password(request, learner_id):
     learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
-    if request.method == 'POST':
-        new_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
-        learner.set_password(new_password)
-        learner.save()
-        messages.success(request, f"Password for @{learner.username} reset successfully to: '{new_password}'")
-    return redirect('portal_learners_list')
+    if request.method == 'GET':
+        form = LearnerPasswordResetForm(user=learner)
+        return TemplateResponse(request, 'portal/learner_reset_password.html', {'form': form, 'learner': learner})
+    elif request.method == 'POST':
+        form = LearnerPasswordResetForm(request.POST, user=learner)
+        if form.is_valid():
+            new_password = form.cleaned_data['new_password']
+            learner.set_password(new_password)
+            learner.save()
+            messages.success(request, f"Password reset successfully for @{learner.username}.")
+            return redirect('portal_learners_list')
+        # If invalid, re-render form with errors
+        return render(request, 'portal/learner_reset_password.html', {'form': form, 'learner': learner})
+    else:
+        return redirect('portal_learners_list')
 
 # --- LEARNER PROGRESS DRILL-DOWN ---
 
@@ -757,6 +772,120 @@ def portal_learner_progress_detail(request, learner_id):
     return render(request, 'portal/learner_detail.html', context)
 
 # --- LMS SETTINGS ---
+
+@admin_required
+def portal_learner_access(request, learner_id):
+    """Render per‑learner access UI."""
+    from .forms import LearnerAccessForm
+    learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
+    subjects = Subject.objects.filter(is_active=True).prefetch_related('topics', 'topics__videos', 'topics__resources')
+    hierarchy = []
+    for subject in subjects:
+        # Build hierarchy for the target learner
+        from django.contrib.contenttypes.models import ContentType
+        def explicit_denial(model, obj_id):
+            ct = ContentType.objects.get_for_model(model)
+            return LearnerAccess.objects.filter(learner=learner, content_type=ct, object_id=obj_id, is_allowed=False).exists()
+
+        subject_allowed = access_services.has_subject_access(learner, subject)
+        subject_entry = {
+            'type': 'subject',
+            'id': subject.id,
+            'name': subject.name,
+            'allowed': subject_allowed,
+            'explicit_denied': not subject_allowed and explicit_denial(Subject, subject.id),
+            'children': [],
+        }
+        for topic in subject.topics.filter(status=Topic.STATUS_PUBLISHED):
+            topic_allowed = subject_allowed and access_services.has_topic_access(learner, topic)
+            topic_entry = {
+                'type': 'topic',
+                'id': topic.id,
+                'name': topic.name,
+                'allowed': topic_allowed,
+                'explicit_denied': not topic_allowed and explicit_denial(Topic, topic.id),
+                'inherited_denied': not subject_allowed,
+                'children': [],
+            }
+            for video in topic.videos.all():
+                video_allowed = topic_allowed and access_services.has_video_access(learner, video)
+                video_entry = {
+                    'type': 'video',
+                    'id': video.id,
+                    'name': video.title,
+                    'allowed': video_allowed,
+                    'explicit_denied': not video_allowed and explicit_denial(Video, video.id),
+                    'inherited_denied': not topic_allowed,
+                }
+                topic_entry['children'].append(video_entry)
+            for resource in topic.resources.all():
+                resource_allowed = topic_allowed and access_services.has_resource_access(learner, resource)
+                resource_entry = {
+                    'type': 'resource',
+                    'id': resource.id,
+                    'name': resource.title,
+                    'allowed': resource_allowed,
+                    'explicit_denied': not resource_allowed and explicit_denial(Resource, resource.id),
+                    'inherited_denied': not topic_allowed,
+                }
+                topic_entry['children'].append(resource_entry)
+            subject_entry['children'].append(topic_entry)
+        hierarchy.append(subject_entry)
+    form = LearnerAccessForm()
+    context = {'learner': learner, 'hierarchy': hierarchy, 'form': form}
+    return render(request, 'portal/learner_access.html', context)
+
+@admin_required
+def portal_learner_access_save(request, learner_id):
+    """Process POST from access UI – only explicit denies are persisted."""
+    if request.method != 'POST':
+        return HttpResponseBadRequest('Invalid method')
+    learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
+    form = LearnerAccessForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, 'Invalid access data submitted.')
+        return redirect('portal_learner_access', learner_id=learner_id)
+    cleaned = form.cleaned_data['access_data']
+    with transaction.atomic():
+        from content.models import Subject, Topic, Video, Resource
+        from django.contrib.contenttypes.models import ContentType
+        model_map = {'subject': Subject, 'topic': Topic, 'video': Video, 'resource': Resource}
+        denied_set = set((e['type'], e['id']) for e in cleaned)
+        existing = LearnerAccess.objects.filter(learner=learner, is_allowed=False)
+        for la in list(existing):
+            ct_model = la.content_type.model
+            if (ct_model, la.object_id) not in denied_set:
+                la.delete()
+        def parent_denied(entry_type, obj_id):
+            if entry_type == 'topic':
+                try:
+                    t = Topic.objects.get(pk=obj_id)
+                    return ('subject', t.subject_id) in denied_set
+                except Topic.DoesNotExist:
+                    return False
+            if entry_type in ('video', 'resource'):
+                try:
+                    obj = Video.objects.get(pk=obj_id) if entry_type == 'video' else Resource.objects.get(pk=obj_id)
+                    return ('topic', obj.topic_id) in denied_set
+                except (Video.DoesNotExist, Resource.DoesNotExist):
+                    return False
+            return False
+        for entry in cleaned:
+            typ, obj_id = entry['type'], entry['id']
+            if parent_denied(typ, obj_id):
+                continue
+            Model = model_map[typ]
+            obj = Model.objects.get(pk=obj_id)
+            ct = ContentType.objects.get_for_model(obj)
+            la, created = LearnerAccess.objects.get_or_create(
+                learner=learner, content_type=ct, object_id=obj_id,
+                defaults={'is_allowed': False}
+            )
+            if not created and la.is_allowed is not False:
+                la.is_allowed = False
+                la.save()
+    messages.success(request, 'Access settings saved.')
+    return redirect('portal_learner_access', learner_id=learner_id)
 
 @admin_required
 def portal_settings(request):

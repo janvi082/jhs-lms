@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from accounts.models import User
 from content.models import Subject, Topic, SiteConfig
 from progress.models import TopicProgress
@@ -12,7 +13,7 @@ from progress.services import (
     get_subject_progress_summary,
     get_overall_learner_progress,
 )
-
+from access.services import has_subject_access, has_topic_access
 @login_required
 def learner_dashboard(request):
     user = request.user
@@ -20,7 +21,11 @@ def learner_dashboard(request):
         # Admin logged in, but can stay or switch views easily
         pass
         
+    # Filter subjects for learner based on access; admin sees all
     active_subjects = Subject.objects.filter(is_active=True)
+    if not user.is_admin_user:
+        # Only include subjects the learner is allowed to access
+        active_subjects = [s for s in active_subjects if has_subject_access(user, s)]
     subjects_data = []
     
     for subject in active_subjects:
@@ -44,7 +49,14 @@ def learner_dashboard(request):
 @login_required
 def subject_detail(request, slug):
     subject = get_object_or_404(Subject, slug=slug, is_active=True)
-    active_topics = list(subject.topics.filter(is_active=True).prefetch_related('questions'))
+    # Access control: deny if learner lacks access to the subject
+    if not has_subject_access(request.user, subject):
+        raise PermissionDenied
+    all_active_topics = list(subject.topics.filter(is_active=True).prefetch_related('questions'))
+    if not request.user.is_admin_user:
+        active_topics = [t for t in all_active_topics if has_topic_access(request.user, t)]
+    else:
+        active_topics = all_active_topics
     
     user_progresses = {
         p.topic_id: p 
@@ -74,15 +86,20 @@ def subject_detail(request, slug):
 
 @login_required
 def topic_detail(request, slug, topic_id):
+    # Retrieve the topic first
     topic = get_object_or_404(Topic, id=topic_id, subject__slug=slug, is_active=True)
-    
+    # Access control: deny if learner lacks access to the topic
+    if not has_topic_access(request.user, topic):
+        raise PermissionDenied
     # Record view and flip status to in_progress if not_started
     progress = record_topic_view(request.user, topic)
     display_status = get_topic_display_status(progress)
-    
+
     videos = list(topic.videos.all())
     resources = list(topic.resources.all())
     # Prepare attempt data with review-aware display
+
+
     attempts_qs = QuizAttempt.objects.filter(user=request.user, topic=topic).order_by('-created_at')
     attempts_data = []
     for a in attempts_qs:
@@ -99,6 +116,7 @@ def topic_detail(request, slug, topic_id):
             'display_score': display_score,
         })
     
+    # Determine next topic (simple progression)
     next_topic = Topic.objects.filter(
         subject=topic.subject,
         is_active=True,

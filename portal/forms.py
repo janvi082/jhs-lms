@@ -120,6 +120,37 @@ class LearnerForm(forms.ModelForm):
             'is_active': 'Account Active'
         }
 
+# New form for admin password reset
+class LearnerPasswordResetForm(forms.Form):
+    new_password = forms.CharField(
+        label='New Password',
+        widget=forms.PasswordInput(attrs={'class': 'form-control'}),
+        strip=False,
+    )
+    confirm_password = forms.CharField(
+        label='Confirm New Password',
+        widget=forms.PasswordInput(attrs={'class': 'form-control'}),
+        strip=False,
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned = super().clean()
+        pw1 = cleaned.get('new_password')
+        pw2 = cleaned.get('confirm_password')
+        if pw1 and pw2 and pw1 != pw2:
+            raise forms.ValidationError('Passwords do not match.')
+        from django.contrib.auth.password_validation import validate_password
+        if pw1:
+            try:
+                validate_password(pw1, user=self.user)
+            except forms.ValidationError as e:
+                raise forms.ValidationError(e.messages)
+        return cleaned
+
 class SiteConfigForm(forms.ModelForm):
     class Meta:
         model = SiteConfig
@@ -132,3 +163,42 @@ class SiteConfigForm(forms.ModelForm):
             'default_passing_score': 'Default Passing Score (%)',
             'default_required_question_count': 'Minimum Questions Required to Publish a Topic'
         }
+
+# New form for Admin Access UI
+class LearnerAccessForm(forms.Form):
+    access_data = forms.CharField(widget=forms.HiddenInput)
+
+    def clean_access_data(self):
+        import json
+        data_str = self.cleaned_data['access_data']
+        try:
+            data = json.loads(data_str)
+        except json.JSONDecodeError:
+            raise forms.ValidationError('Invalid JSON data.')
+        if not isinstance(data, list):
+            raise forms.ValidationError('Access data must be a list.')
+        valid_types = {'subject', 'topic', 'video', 'resource'}
+        cleaned = []
+        from content.models import Subject, Topic, Video, Resource
+        model_map = {
+            'subject': Subject,
+            'topic': Topic,
+            'video': Video,
+            'resource': Resource,
+        }
+        for entry in data:
+            if not isinstance(entry, dict):
+                raise forms.ValidationError('Each entry must be an object.')
+            typ = entry.get('type')
+            obj_id = entry.get('id')
+            if typ not in valid_types:
+                raise forms.ValidationError(f'Invalid type: {typ}')
+            if not isinstance(obj_id, int):
+                raise forms.ValidationError('ID must be an integer.')
+            Model = model_map[typ]
+            try:
+                obj = Model.objects.get(pk=obj_id)
+            except Model.DoesNotExist:
+                raise forms.ValidationError(f'{typ.title()} with id {obj_id} does not exist.')
+            cleaned.append({'type': typ, 'id': obj_id})
+        return cleaned

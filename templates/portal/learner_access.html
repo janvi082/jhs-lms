@@ -1,0 +1,54 @@
+{% extends "portal/base_portal.html" %}
+{% load static %}
+
+{% block portal_content %}
+<h2>Access Control for Learner: {{ learner.username }}</h2>
+<form id="learner-access-form" method="post" action="{% url 'portal_learner_access_save' learner_id=learner.id %}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <ul class="list-unstyled">
+{% for subject in hierarchy %}
+<li>
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input access-checkbox" data-type="subject" data-id="{{ subject.id }}" data-explicit="{{ subject.explicit_denied|yesno:'true,false' }}" {% if subject.allowed %}checked{% endif %} {% if not subject.allowed and not subject.explicit_denied %}disabled{% endif %}>
+        <label class="form-check-label">Subject: {{ subject.name }}{% if subject.explicit_denied %} (Denied){% endif %}</label>
+    </div>
+    <ul style="margin-left:20px;">
+        {% for topic in subject.children %}
+        <li>
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input access-checkbox" data-type="topic" data-id="{{ topic.id }}" data-explicit="{{ topic.explicit_denied|yesno:'true,false' }}" {% if topic.allowed %}checked{% endif %} {% if not topic.allowed and not topic.explicit_denied %}disabled{% endif %}>
+                <label class="form-check-label">Topic: {{ topic.id }} - {{ topic.name }}{% if topic.explicit_denied %} (Denied){% endif %}</label>
+            </div>
+            <ul style="margin-left:20px;">
+                {% for video in topic.children %}
+                {% if video.type == "video" %}
+                <li>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input access-checkbox" data-type="video" data-id="{{ video.id }}" data-explicit="{{ video.explicit_denied|yesno:'true,false' }}" {% if video.allowed %}checked{% endif %} {% if not video.allowed and not video.explicit_denied %}disabled{% endif %}>
+                        <label class="form-check-label">Video: {{ video.id }} - {{ video.name }}{% if video.explicit_denied %} (Denied){% endif %}</label>
+                    </div>
+                </li>
+                {% endif %}
+                {% endfor %}
+                {% for resource in topic.children %}
+                {% if resource.type == "resource" %}
+                <li>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input access-checkbox" data-type="resource" data-id="{{ resource.id }}" data-explicit="{{ resource.explicit_denied|yesno:'true,false' }}" {% if resource.allowed %}checked{% endif %} {% if not resource.allowed and not resource.explicit_denied %}disabled{% endif %}>
+                        <label class="form-check-label">Resource: {{ resource.id }} - {{ resource.name }}{% if resource.explicit_denied %} (Denied){% endif %}</label>
+                    </div>
+                </li>
+                {% endif %}
+                {% endfor %}
+            </ul>
+        </li>
+        {% endfor %}
+    </ul>
+</li>
+{% endfor %}
+    </ul>
+    <button type="submit" class="btn btn-primary mt-3">Save Access Settings</button>
+</form>
+<script src="{% static 'portal/learner_access.js' %}"></script>
+{% endblock %}
