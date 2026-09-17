@@ -14,6 +14,15 @@
   </button>
 </div>
 
+<!-- Reorder Controls -->
+<div id="reorder-controls" class="d-none alert alert-warning d-flex justify-content-between align-items-center mb-4 py-2 shadow-sm">
+  <div class="fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i> Unsaved ordering changes!</div>
+  <div>
+    <button id="cancel-order-btn" class="btn btn-sm btn-outline-secondary me-2">Cancel</button>
+    <button id="save-order-btn" class="btn btn-sm btn-success">Save Order</button>
+  </div>
+</div>
+
 <!-- Subjects Table -->
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
@@ -29,45 +38,55 @@
             <th class="text-end pe-4">Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="subjects-tbody">
           {% for sub in subjects %}
-          <tr>
-            <td class="ps-4 fw-bold text-muted">{{ sub.order }}</td>
+          <tr class="subject-row align-middle" data-subject-id="{{ sub.id }}">
+            <td class="ps-4" style="width: 80px;">
+              <i class="bi bi-grip-vertical text-secondary drag-handle fs-5 me-1"></i>
+              <span class="fw-bold text-muted display-order">{{ sub.order }}</span>
+            </td>
             <td>
               <span class="fw-bold text-dark">{{ sub.name }}</span>
             </td>
-            <td class="text-muted small" style="max-width: 300px;">
-              {{ sub.description|default:"—"|truncatewords:15 }}
+            <td class="text-secondary text-truncate" style="max-width: 250px;">
+              {{ sub.description|default:"-" }}
             </td>
             <td>
-              <a href="{% url 'portal_subject_topics_list' sub.id %}" class="badge bg-light text-primary border text-decoration-none">
-                <i class="bi bi-journal-text me-1"></i> {{ sub.topics.count }} Topics
-              </a>
+              <span class="badge bg-light text-dark border">{{ sub.topics.count }} Topics</span>
             </td>
             <td>
               {% if sub.is_active %}
-                <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
+                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">Active</span>
               {% else %}
-                <span class="badge bg-secondary-subtle text-secondary border">Archived</span>
+                <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25">Archived</span>
               {% endif %}
             </td>
             <td class="text-end pe-4">
-              <div class="btn-group btn-group-sm">
-                <a href="{% url 'portal_subject_topics_list' sub.id %}" class="btn btn-outline-primary">
-                  Manage Topics
-                </a>
-                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSubjectModal{{ sub.id }}">
-                  Edit
-                </button>
-                <form action="{% url 'portal_subject_archive' sub.id %}" method="post" class="d-inline" onsubmit="return confirm('Toggle status for this subject?');">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-outline-{% if sub.is_active %}warning{% else %}success{% endif %}">
-                    {% if sub.is_active %}Archive{% else %}Activate{% endif %}
+              <div class="d-inline-flex align-items-center gap-3">
+                <!-- Group 1: Standard Actions -->
+                <div class="d-inline-flex gap-1">
+                  <a href="{% url 'portal_subject_topics_list' sub.id %}" class="btn btn-sm btn-outline-primary" title="Manage Topics">
+                    <i class="bi bi-list-task me-1"></i> Topics
+                  </a>
+                  <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSubjectModal{{ sub.id }}" title="Edit">
+                    <i class="bi bi-pencil"></i>
                   </button>
-                </form>
+                  <form action="{% url 'portal_subject_archive' sub.id %}" method="post" class="d-inline m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm {% if sub.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}" title="{% if sub.is_active %}Archive{% else %}Activate{% endif %}">
+                      <i class="bi {% if sub.is_active %}bi-archive{% else %}bi-arrow-counterclockwise{% endif %}"></i>
+                    </button>
+                  </form>
+                </div>
+                
+                <!-- Group 2: Reorder Controls (Up/Down) -->
+                <div class="btn-group-vertical btn-group-sm shadow-sm" role="group">
+                  <button type="button" class="btn btn-light border p-0 px-2 move-up-btn" title="Move Up"><i class="bi bi-chevron-up" style="font-size: 0.7rem;"></i></button>
+                  <button type="button" class="btn btn-light border p-0 px-2 move-down-btn" title="Move Down"><i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i></button>
+                </div>
               </div>
 
-              <!-- Edit Modal -->
+              <!-- Edit Subject Modal -->
               <div class="modal fade text-start" id="editSubjectModal{{ sub.id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog">
                   <div class="modal-content">
@@ -85,10 +104,6 @@
                         <div class="mb-3">
                           <label class="form-label fw-semibold">Description</label>
                           <textarea name="description" class="form-control" rows="3">{{ sub.description }}</textarea>
-                        </div>
-                        <div class="mb-3">
-                          <label class="form-label fw-semibold">Display Order</label>
-                          <input type="number" name="order" class="form-control" value="{{ sub.order }}">
                         </div>
                         <div class="form-check mb-2">
                           <input type="checkbox" name="is_active" class="form-check-input" id="activeCheck{{ sub.id }}" {% if sub.is_active %}checked{% endif %}>
@@ -135,10 +150,6 @@
             <label class="form-label fw-semibold">Description</label>
             {{ form.description }}
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Display Order</label>
-            {{ form.order }}
-          </div>
           <div class="form-check mb-2">
             {{ form.is_active }}
             <label class="form-check-label" for="{{ form.is_active.id_for_label }}">{{ form.is_active.label }}</label>
@@ -152,4 +163,276 @@
     </div>
   </div>
 </div>
+<style>
+.subject-row {
+    transition: background-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+    background-color: #fff;
+    cursor: grab;
+}
+.subject-row.is-dragging {
+    background-color: #fbe9e8 !important;
+    box-shadow: 0 4px 12px rgba(179, 36, 28, 0.15) !important;
+    outline: 1px solid #d64545;
+    position: relative;
+    z-index: 1000;
+    cursor: grabbing !important;
+}
+.subject-row.is-reorder-target {
+    opacity: 0.65;
+    background-color: #fdf5f4 !important;
+}
+.subject-row a, .subject-row button, .subject-row form, .subject-row input {
+    cursor: pointer;
+}
+.is-dragging-global .subject-row:not(.is-dragging) {
+    pointer-events: none;
+}
+.no-select {
+    user-select: none !important;
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tbody = document.getElementById('subjects-tbody');
+    if (!tbody) return;
+    const saveBtn = document.getElementById('save-order-btn');
+    const cancelBtn = document.getElementById('cancel-order-btn');
+    const reorderControls = document.getElementById('reorder-controls');
+    
+    let activeRow = null;
+    let startY = 0;
+    let startX = 0;
+    let isDragging = false;
+    let dragTarget = null;
+    
+    function swapWith(active, target, insertBeforeTarget) {
+        const siblings = Array.from(tbody.querySelectorAll('tr.subject-row')).filter(r => r !== active);
+        const initialPositions = new Map();
+        siblings.forEach(r => initialPositions.set(r, r.getBoundingClientRect().top));
+        
+        if (insertBeforeTarget) {
+            active.parentNode.insertBefore(active, target);
+        } else {
+            active.parentNode.insertBefore(active, target.nextSibling);
+        }
+        
+        siblings.forEach(r => {
+            const oldTop = initialPositions.get(r);
+            const newTop = r.getBoundingClientRect().top;
+            const delta = oldTop - newTop;
+            
+            if (delta !== 0) {
+                r.style.transform = `translateY(${delta}px)`;
+                r.style.transition = 'none';
+                
+                void r.offsetHeight;
+                
+                r.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+                r.style.transform = 'translateY(0)';
+                
+                if (r.dataset.swapTimeout) {
+                    clearTimeout(parseInt(r.dataset.swapTimeout));
+                }
+                
+                r.dataset.swapTimeout = setTimeout(() => {
+                    r.style.transition = '';
+                    r.style.transform = '';
+                    delete r.dataset.swapTimeout;
+                }, 200).toString();
+            }
+        });
+    }
+
+    function onPointerMove(e) {
+        if (!activeRow) return;
+        if (e.preventDefault) e.preventDefault();
+        
+        const clientY = e.clientY;
+        const activeRect = activeRow.getBoundingClientRect();
+        const activeMid = activeRect.top + activeRect.height / 2;
+        
+        const siblings = Array.from(tbody.querySelectorAll('tr.subject-row')).filter(r => r !== activeRow);
+        
+        siblings.forEach(r => {
+            const rect = r.getBoundingClientRect();
+            if (clientY >= rect.top && clientY <= rect.bottom) {
+                r.classList.add('is-reorder-target');
+            } else {
+                r.classList.remove('is-reorder-target');
+            }
+        });
+        
+        if (clientY < activeMid) {
+            const prevRow = activeRow.previousElementSibling;
+            if (prevRow && prevRow.classList.contains('subject-row')) {
+                const prevRect = prevRow.getBoundingClientRect();
+                const prevMid = prevRect.top + prevRect.height / 2;
+                if (clientY < prevMid) {
+                    swapWith(activeRow, prevRow, true);
+                }
+            }
+        } else if (clientY > activeMid) {
+            const nextRow = activeRow.nextElementSibling;
+            if (nextRow && nextRow.classList.contains('subject-row')) {
+                const nextRect = nextRow.getBoundingClientRect();
+                const nextMid = nextRect.top + nextRect.height / 2;
+                if (clientY > nextMid) {
+                    swapWith(activeRow, nextRow, false);
+                }
+            }
+        }
+    }
+    
+    function onPointerMoveStart(e) {
+        if (e.preventDefault) e.preventDefault();
+        const dy = Math.abs(e.clientY - startY);
+        const dx = Math.abs(e.clientX - startX);
+        if (dy > 5 || dx > 5) {
+            startActualDrag();
+        }
+    }
+    
+    function startActualDrag() {
+        isDragging = true;
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        
+        activeRow = dragTarget.closest('tr.subject-row');
+        if (activeRow) {
+            activeRow.classList.add('is-dragging');
+            document.body.classList.add('no-select');
+            document.body.classList.add('is-dragging-global');
+            document.addEventListener('pointermove', onPointerMove);
+        }
+    }
+    
+    function onPointerUp(e) {
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerUp);
+        
+        const rows = tbody.querySelectorAll('tr.subject-row');
+        rows.forEach(r => r.classList.remove('is-reorder-target'));
+        
+        if (isDragging && activeRow) {
+            activeRow.classList.remove('is-dragging');
+            document.body.classList.remove('no-select');
+            document.body.classList.remove('is-dragging-global');
+            activeRow = null;
+            
+            showSaveControls();
+            updateDisplayOrders();
+        }
+        isDragging = false;
+        dragTarget = null;
+    }
+    
+    function initDrag(e) {
+        if (e.button !== 0) return;
+        
+        if (e.target.closest('button, a, input, form, .btn-group')) {
+            return;
+        }
+        
+        dragTarget = e.target;
+        startY = e.clientY;
+        startX = e.clientX;
+        isDragging = false;
+        
+        document.addEventListener('pointermove', onPointerMoveStart);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerUp);
+    }
+    
+    function moveUp(btn) {
+        let row = btn.closest('tr');
+        if (row.previousElementSibling && row.previousElementSibling.classList.contains('subject-row')) {
+            swapWith(row, row.previousElementSibling, true);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+    
+    function moveDown(btn) {
+        let row = btn.closest('tr');
+        if (row.nextElementSibling && row.nextElementSibling.classList.contains('subject-row')) {
+            swapWith(row, row.nextElementSibling, false);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+
+    function addHandlers(row) {
+        row.addEventListener('pointerdown', initDrag);
+        
+        let upBtn = row.querySelector('.move-up-btn');
+        let downBtn = row.querySelector('.move-down-btn');
+        if (upBtn) upBtn.addEventListener('click', function(e) { e.stopPropagation(); moveUp(this); });
+        if (downBtn) downBtn.addEventListener('click', function(e) { e.stopPropagation(); moveDown(this); });
+    }
+
+    let rows = tbody.querySelectorAll('tr.subject-row');
+    [].forEach.call(rows, function(row) {
+        addHandlers(row);
+    });
+    
+    function showSaveControls() {
+        if (reorderControls) {
+            reorderControls.classList.remove('d-none');
+            reorderControls.classList.add('d-flex');
+        }
+    }
+    
+    function updateDisplayOrders() {
+        let rows = tbody.querySelectorAll('tr.subject-row');
+        rows.forEach((row, index) => {
+            let orderSpan = row.querySelector('.display-order');
+            if (orderSpan) {
+                orderSpan.textContent = (index + 1);
+                orderSpan.classList.add('text-danger');
+            }
+        });
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
+    
+    if (saveBtn) {
+        saveBtn.addEventListener('click', function() {
+            let rows = tbody.querySelectorAll('tr.subject-row');
+            let ids = Array.from(rows).map(row => row.getAttribute('data-subject-id'));
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+            
+            fetch('{% url "portal_subjects_reorder" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ subject_ids: ids })
+            })
+            .then(response => response.json().then(data => ({status: response.status, body: data})))
+            .then(res => {
+                if (res.status === 200 && res.body.status === 'ok') {
+                    window.location.reload();
+                } else {
+                    alert('Error saving order: ' + (res.body.message || 'Unknown error'));
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = 'Save Order';
+                }
+            })
+            .catch(err => {
+                alert('Network error saving order.');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = 'Save Order';
+            });
+        });
+    }
+});
+</script>
 {% endblock %}

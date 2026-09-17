@@ -95,6 +95,42 @@ def portal_subject_archive(request, subject_id):
         messages.success(request, f"Subject '{subject.name}' has been {status_str}.")
     return redirect('portal_subjects_list')
 
+@admin_required
+def portal_subjects_reorder(request):
+    if request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+            subject_ids = data.get('subject_ids', [])
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON format.'}, status=400)
+            
+        if not subject_ids:
+            return JsonResponse({'status': 'error', 'message': 'No subject IDs provided.'}, status=400)
+            
+        try:
+            subject_ids = [int(sid) for sid in subject_ids]
+        except ValueError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid subject IDs format.'}, status=400)
+            
+        with transaction.atomic():
+            current_subjects = list(Subject.objects.values_list('id', flat=True))
+            
+            if len(subject_ids) != len(current_subjects):
+                return JsonResponse({'status': 'error', 'message': 'Submitted list length does not match existing subjects.'}, status=400)
+                
+            if set(subject_ids) != set(current_subjects):
+                return JsonResponse({'status': 'error', 'message': 'Submitted IDs do not exactly match existing subjects.'}, status=400)
+                
+            if len(subject_ids) != len(set(subject_ids)):
+                return JsonResponse({'status': 'error', 'message': 'Duplicate IDs found in submission.'}, status=400)
+                
+            for index, sid in enumerate(subject_ids, start=1):
+                Subject.objects.filter(id=sid).update(order=index)
+                
+        return JsonResponse({'status': 'ok', 'message': 'Subject order saved successfully.'})
+    return HttpResponseBadRequest("POST required")
+
 # --- TOPICS MANAGEMENT ---
 
 @admin_required

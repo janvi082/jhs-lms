@@ -8,6 +8,7 @@ urlpatterns = [
     # Subjects
     path('subjects/', views.portal_subjects_list, name='portal_subjects_list'),
     path('subjects/add/', views.portal_subject_add, name='portal_subject_add'),
+    path('subjects/reorder/', views.portal_subjects_reorder, name='portal_subjects_reorder'),
     path('subjects/<int:subject_id>/edit/', views.portal_subject_edit, name='portal_subject_edit'),
     path('subjects/<int:subject_id>/archive/', views.portal_subject_archive, name='portal_subject_archive'),
     

@@ -36,6 +36,10 @@ class Subject(models.Model):
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.name)
+        if self.pk is None and not self.order:
+            from django.db.models import Max
+            max_order = Subject.objects.aggregate(Max('order'))['order__max']
+            self.order = (max_order or 0) + 1
         super().save(*args, **kwargs)
 
     def __str__(self):
