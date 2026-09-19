@@ -64,10 +64,7 @@
           <label class="form-label fw-semibold">Publication Status</label>
           {{ form.status }}
         </div>
-        <div class="col-md-4">
-          <label class="form-label fw-semibold">Display Order</label>
-          {{ form.order }}
-        </div>
+
         <div class="col-md-4">
           <label class="form-label fw-semibold">Passing Score Override (%)</label>
           {{ form.passing_score_override }}
@@ -150,10 +147,6 @@
                     <div class="mb-3">
                       <label class="form-label fw-semibold">Description</label>
                       <textarea name="description" class="form-control" rows="2">{{ v.description }}</textarea>
-                    </div>
-                    <div class="mb-3">
-                      <label class="form-label fw-semibold">Display Order</label>
-                      <input type="number" name="order" value="{{ v.order }}" class="form-control">
                     </div>
                   </div>
                   <div class="modal-footer">
@@ -243,10 +236,6 @@
                       <label class="form-label fw-semibold">Description</label>
                       <textarea name="description" class="form-control" rows="2">{{ m.description }}</textarea>
                     </div>
-                    <div class="mb-3">
-                      <label class="form-label fw-semibold">Display Order</label>
-                      <input type="number" name="order" value="{{ m.order }}" class="form-control">
-                    </div>
                   </div>
                   <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -311,10 +300,6 @@
             <label class="form-label fw-semibold">Description</label>
             {{ video_form.description }}
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Display Order (Optional)</label>
-            {{ video_form.order }}
-          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -351,10 +336,6 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Description</label>
             {{ resource_form.description }}
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Display Order (Optional)</label>
-            {{ resource_form.order }}
           </div>
         </div>
         <div class="modal-footer">

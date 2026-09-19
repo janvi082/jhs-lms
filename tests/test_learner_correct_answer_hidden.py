@@ -94,3 +94,41 @@ class LearnerCorrectAnswerHiddenTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, self.correct_choice.text)
         self.assertContains(resp, 'Correct')
+
+    def test_historical_order_preserved_after_question_reorder(self):
+        # Create additional questions to establish a sequence: Q1, Q2, Q3
+        # self.question is already order=1 (let's call it Q_A)
+        q_b = Question.objects.create(topic=self.topic, text='Q_B', question_type=Question.TYPE_PARAGRAPH, order=2)
+        q_c = Question.objects.create(topic=self.topic, text='Q_C', question_type=Question.TYPE_PARAGRAPH, order=3)
+        
+        # Learner submits attempt with the current order: Q_A, Q_B, Q_C
+        attempt, _ = submit_quiz_attempt(self.learner, self.topic, {
+            self.question.id: self.correct_choice.id,
+            q_b.id: 'ans_b',
+            q_c.id: 'ans_c'
+        })
+        
+        # Admin reorders questions in the database so the new order is Q_C, Q_A, Q_B
+        q_c.order = 1
+        q_c.save()
+        self.question.order = 2
+        self.question.save()
+        q_b.order = 3
+        q_b.save()
+        
+        # Fetch the historical result page
+        result_url = reverse('quiz_result', kwargs={'slug': self.subject.slug, 'topic_id': self.topic.id, 'attempt_id': attempt.id})
+        result_page = self.client.get(result_url)
+        self.assertEqual(result_page.status_code, 200)
+        
+        # Verify the historical display order matches the ORIGINAL attempt creation order (Q_A, Q_B, Q_C)
+        # by checking the context 'question_reviews' list order
+        question_reviews = result_page.context['question_reviews']
+        self.assertEqual(len(question_reviews), 3)
+        
+        # Index 0 should be Q_A (self.question)
+        self.assertEqual(question_reviews[0]['question_id'], self.question.id)
+        # Index 1 should be Q_B
+        self.assertEqual(question_reviews[1]['question_id'], q_b.id)
+        # Index 2 should be Q_C
+        self.assertEqual(question_reviews[2]['question_id'], q_c.id)

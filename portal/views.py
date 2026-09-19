@@ -182,10 +182,45 @@ def portal_topic_add(request):
 @admin_required
 def portal_topics_reorder(request):
     if request.method == 'POST':
-        topic_ids = request.POST.getlist('topic_ids[]')
-        for index, topic_id in enumerate(topic_ids, start=1):
-            Topic.objects.filter(id=topic_id).update(order=index)
-        return JsonResponse({'status': 'ok'})
+        import json
+        try:
+            data = json.loads(request.body)
+            subject_id = data.get('subject_id')
+            topic_ids = data.get('topic_ids', [])
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON format.'}, status=400)
+
+        if not subject_id:
+            return JsonResponse({'status': 'error', 'message': 'Subject ID is required.'}, status=400)
+        
+        if not topic_ids:
+            return JsonResponse({'status': 'error', 'message': 'No topic IDs provided.'}, status=400)
+            
+        try:
+            subject_id = int(subject_id)
+            topic_ids = [int(tid) for tid in topic_ids]
+        except ValueError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid ID format.'}, status=400)
+            
+        if not Subject.objects.filter(id=subject_id).exists():
+            return JsonResponse({'status': 'error', 'message': 'Subject does not exist.'}, status=400)
+
+        with transaction.atomic():
+            current_topics = list(Topic.objects.filter(subject_id=subject_id).values_list('id', flat=True))
+            
+            if len(topic_ids) != len(current_topics):
+                return JsonResponse({'status': 'error', 'message': 'Submitted list length does not match existing topics.'}, status=400)
+                
+            if set(topic_ids) != set(current_topics):
+                return JsonResponse({'status': 'error', 'message': 'Submitted IDs do not exactly match existing topics for this subject.'}, status=400)
+                
+            if len(topic_ids) != len(set(topic_ids)):
+                return JsonResponse({'status': 'error', 'message': 'Duplicate IDs found in submission.'}, status=400)
+                
+            for index, tid in enumerate(topic_ids, start=1):
+                Topic.objects.filter(id=tid).update(order=index)
+                
+        return JsonResponse({'status': 'ok', 'message': 'Topic order saved successfully.'})
     return HttpResponseBadRequest("POST required")
 
 # --- TOPIC CENTRAL EDITOR & PUBLISH GATE ---
@@ -286,8 +321,6 @@ def portal_video_add(request, topic_id):
         if form.is_valid():
             video = form.save(commit=False)
             video.topic = topic
-            if not video.order:
-                video.order = topic.videos.count() + 1
             video.save()
             messages.success(request, f"Video tutorial '{video.title}' added successfully.")
         else:
@@ -313,8 +346,6 @@ def portal_material_add(request, topic_id):
         if form.is_valid():
             material = form.save(commit=False)
             material.topic = topic
-            if not material.order:
-                material.order = topic.resources.count() + 1
             material.save()
             messages.success(request, f"Learning material '{material.title}' added successfully.")
         else:
@@ -425,11 +456,6 @@ def portal_question_add(request, topic_id):
         is_required = request.POST.get('required') in ('true', 'True', 'on', '1') or 'required' in request.POST
         accepted_answers = request.POST.get('accepted_answers', '').strip()
         
-        try:
-            order = int(request.POST.get('order', topic.questions.count() + 1))
-        except ValueError:
-            order = topic.questions.count() + 1
-        
         if not question_text:
             messages.error(request, "Question text cannot be empty.")
             return redirect('portal_questions_manage', topic_id=topic.id)
@@ -458,8 +484,7 @@ def portal_question_add(request, topic_id):
                     topic=topic,
                     text=question_text,
                     question_type=Question.TYPE_SINGLE_CHOICE,
-                    required=is_required,
-                    order=order
+                    required=is_required
                 )
                 for idx, c_text in enumerate(choice_texts, start=1):
                     Choice.objects.create(
@@ -489,8 +514,7 @@ def portal_question_add(request, topic_id):
                     topic=topic,
                     text=question_text,
                     question_type=Question.TYPE_MULTIPLE_CHOICE,
-                    required=is_required,
-                    order=order
+                    required=is_required
                 )
                 for idx, c_text in enumerate(choice_texts, start=1):
                     Choice.objects.create(
@@ -506,8 +530,7 @@ def portal_question_add(request, topic_id):
                     topic=topic,
                     text=question_text,
                     question_type=Question.TYPE_TRUE_FALSE,
-                    required=is_required,
-                    order=order
+                    required=is_required
                 )
                 Choice.objects.create(question=question, text="True", is_correct=(tf_correct == 'true'))
                 Choice.objects.create(question=question, text="False", is_correct=(tf_correct == 'false'))
@@ -521,8 +544,7 @@ def portal_question_add(request, topic_id):
                 text=question_text,
                 question_type=Question.TYPE_SHORT_ANSWER,
                 required=is_required,
-                accepted_answers=accepted_answers,
-                order=order
+                accepted_answers=accepted_answers
             )
 
         elif question_type == Question.TYPE_PARAGRAPH:
@@ -530,8 +552,7 @@ def portal_question_add(request, topic_id):
                 topic=topic,
                 text=question_text,
                 question_type=Question.TYPE_PARAGRAPH,
-                required=is_required,
-                order=order
+                required=is_required
             )
 
         messages.success(request, "Question saved successfully.")
@@ -549,25 +570,295 @@ def portal_question_delete(request, question_id):
             messages.error(request, "Cannot delete this question because it is referenced by existing quiz attempts.")
     return redirect('portal_questions_manage', topic_id=topic_id)
 
+@admin_required
+def portal_questions_reorder(request):
+    if request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+            topic_id = data.get('topic_id')
+            question_ids = data.get('question_ids', [])
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON format.'}, status=400)
+
+        if not topic_id:
+            return JsonResponse({'success': False, 'error': 'Topic ID is required.'}, status=400)
+        
+        if not question_ids:
+            return JsonResponse({'success': False, 'error': 'No question IDs provided.'}, status=400)
+            
+        try:
+            topic_id = int(topic_id)
+            question_ids = [int(qid) for qid in question_ids]
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid ID format.'}, status=400)
+            
+        if not Topic.objects.filter(id=topic_id).exists():
+            return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
+
+        with transaction.atomic():
+            current_questions = list(Question.objects.filter(topic_id=topic_id).values_list('id', flat=True))
+            
+            if len(question_ids) != len(current_questions):
+                return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing questions.'}, status=400)
+                
+            if len(question_ids) != len(set(question_ids)):
+                return JsonResponse({'success': False, 'error': 'Duplicate IDs found in submission.'}, status=400)
+                
+            if set(question_ids) != set(current_questions):
+                return JsonResponse({'success': False, 'error': 'Submitted IDs do not exactly match existing questions for this topic.'}, status=400)
+                
+            for index, qid in enumerate(question_ids, start=1):
+                Question.objects.filter(id=qid).update(order=index)
+                
+        return JsonResponse({'success': True})
+    return HttpResponseBadRequest("POST required")
+
 # --- GLOBAL OVERVIEWS (VIDEOS, MATERIALS, QUIZZES) ---
 
 @admin_required
 def portal_videos_overview(request):
-    videos = Video.objects.select_related('topic__subject').all().order_by('topic__subject__order', 'topic__order')
-    return render(request, 'portal/videos_list.html', {'videos': videos})
+    subject_id = request.GET.get('subject_id')
+    topic_id = request.GET.get('topic_id')
+    
+    selected_subject = None
+    selected_topic = None
+    videos = Video.objects.select_related('topic__subject').all()
+    
+    if subject_id:
+        from content.models import Subject
+        try:
+            selected_subject = Subject.objects.get(id=subject_id)
+        except (ValueError, Subject.DoesNotExist):
+            selected_subject = None
+            subject_id = None
+            
+    if topic_id:
+        try:
+            selected_topic = Topic.objects.get(id=topic_id)
+            if selected_subject and selected_topic.subject_id != selected_subject.id:
+                selected_topic = None
+            else:
+                if not selected_subject:
+                    selected_subject = selected_topic.subject
+        except (ValueError, Topic.DoesNotExist):
+            selected_topic = None
+
+    if selected_topic:
+        videos = videos.filter(topic=selected_topic).order_by('order', 'id')
+    elif selected_subject:
+        videos = videos.filter(topic__subject=selected_subject).order_by('topic__order', 'order', 'id')
+    else:
+        videos = videos.order_by('topic__subject__order', 'topic__order', 'order', 'id')
+        
+    from content.models import Subject
+    subjects = Subject.objects.all().order_by('order', 'id')
+    
+    topics = Topic.objects.select_related('subject').all()
+    if selected_subject:
+        topics = topics.filter(subject=selected_subject)
+    topics = topics.order_by('subject__order', 'order')
+    
+    return render(request, 'portal/videos_list.html', {
+        'videos': videos,
+        'subjects': subjects,
+        'topics': topics,
+        'selected_subject': selected_subject,
+        'selected_topic': selected_topic
+    })
+
+@admin_required
+def portal_videos_reorder(request):
+    if request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+            topic_id = data.get('topic_id')
+            video_ids = data.get('video_ids', [])
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON format.'}, status=400)
+
+        if not topic_id:
+            return JsonResponse({'success': False, 'error': 'Topic ID is required.'}, status=400)
+        
+        if not video_ids:
+            return JsonResponse({'success': False, 'error': 'No video IDs provided.'}, status=400)
+            
+        try:
+            topic_id = int(topic_id)
+            video_ids = [int(vid) for vid in video_ids]
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid ID format.'}, status=400)
+            
+        if not Topic.objects.filter(id=topic_id).exists():
+            return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
+
+        with transaction.atomic():
+            current_videos = list(Video.objects.filter(topic_id=topic_id).values_list('id', flat=True))
+            
+            if len(video_ids) != len(current_videos):
+                return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing videos.'}, status=400)
+                
+            if len(video_ids) != len(set(video_ids)):
+                return JsonResponse({'success': False, 'error': 'Duplicate IDs found in submission.'}, status=400)
+                
+            if set(video_ids) != set(current_videos):
+                return JsonResponse({'success': False, 'error': 'Submitted IDs do not exactly match existing videos for this topic.'}, status=400)
+                
+            for index, vid in enumerate(video_ids, start=1):
+                Video.objects.filter(id=vid).update(order=index)
+                
+        return JsonResponse({'success': True})
+    return HttpResponseBadRequest("POST required")
+@admin_required
+def portal_resources_reorder(request):
+    if request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON format.'}, status=400)
+
+        if not isinstance(data, dict):
+            return JsonResponse({'success': False, 'error': 'JSON payload must be an object.'}, status=400)
+
+        topic_id = data.get('topic_id')
+        resource_ids = data.get('resource_ids')
+
+        if not topic_id:
+            return JsonResponse({'success': False, 'error': 'Topic ID is required.'}, status=400)
+        
+        if not isinstance(resource_ids, list):
+            return JsonResponse({'success': False, 'error': 'resource_ids must be a list.'}, status=400)
+        
+        if not resource_ids:
+            return JsonResponse({'success': False, 'error': 'No resource IDs provided.'}, status=400)
+            
+        try:
+            topic_id = int(topic_id)
+            resource_ids = [int(rid) for rid in resource_ids]
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'error': 'Invalid ID format.'}, status=400)
+            
+        if not Topic.objects.filter(id=topic_id).exists():
+            return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
+
+        with transaction.atomic():
+            current_resources = list(Resource.objects.filter(topic_id=topic_id).values_list('id', flat=True))
+            
+            if len(resource_ids) != len(current_resources):
+                return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing resources.'}, status=400)
+                
+            if len(resource_ids) != len(set(resource_ids)):
+                return JsonResponse({'success': False, 'error': 'Duplicate IDs found in submission.'}, status=400)
+                
+            if set(resource_ids) != set(current_resources):
+                return JsonResponse({'success': False, 'error': 'Submitted IDs do not exactly match existing resources for this topic.'}, status=400)
+                
+            for index, rid in enumerate(resource_ids, start=1):
+                Resource.objects.filter(id=rid).update(order=index)
+                
+        return JsonResponse({'success': True})
+    return HttpResponseBadRequest("POST required")
 
 @admin_required
 def portal_materials_overview(request):
-    materials = Resource.objects.select_related('topic__subject').all().order_by('topic__subject__order', 'topic__order')
-    return render(request, 'portal/materials_list.html', {'materials': materials})
+    subject_id = request.GET.get('subject_id')
+    topic_id = request.GET.get('topic_id')
+    
+    selected_subject = None
+    selected_topic = None
+    materials = Resource.objects.select_related('topic__subject').all()
+    
+    if subject_id:
+        from content.models import Subject
+        try:
+            selected_subject = Subject.objects.get(id=subject_id)
+        except (ValueError, Subject.DoesNotExist):
+            selected_subject = None
+            subject_id = None
+            
+    if topic_id:
+        try:
+            selected_topic = Topic.objects.get(id=topic_id)
+            if selected_subject and selected_topic.subject_id != selected_subject.id:
+                selected_topic = None
+            else:
+                if not selected_subject:
+                    selected_subject = selected_topic.subject
+        except (ValueError, Topic.DoesNotExist):
+            selected_topic = None
+
+    if selected_topic:
+        materials = materials.filter(topic=selected_topic).order_by('order', 'id')
+    elif selected_subject:
+        materials = materials.filter(topic__subject=selected_subject).order_by('topic__order', 'order', 'id')
+    else:
+        materials = materials.order_by('topic__subject__order', 'topic__order', 'order', 'id')
+        
+    from content.models import Subject
+    subjects = Subject.objects.all().order_by('order', 'id')
+    
+    topics = Topic.objects.select_related('subject').all()
+    if selected_subject:
+        topics = topics.filter(subject=selected_subject)
+    topics = topics.order_by('subject__order', 'order')
+    
+    return render(request, 'portal/materials_list.html', {
+        'materials': materials,
+        'subjects': subjects,
+        'topics': topics,
+        'selected_subject': selected_subject,
+        'selected_topic': selected_topic
+    })
 
 @admin_required
 def portal_quizzes_overview(request):
-    topics = Topic.objects.select_related('subject').prefetch_related('questions').all()
+    subject_id = request.GET.get('subject_id')
+    topic_id = request.GET.get('topic_id')
+    
+    selected_subject = None
+    selected_topic = None
+    topics_queryset = Topic.objects.select_related('subject').prefetch_related('questions').all()
+    
+    if subject_id:
+        from content.models import Subject
+        try:
+            selected_subject = Subject.objects.get(id=subject_id)
+        except (ValueError, Subject.DoesNotExist):
+            selected_subject = None
+            subject_id = None
+            
+    if topic_id:
+        try:
+            selected_topic = Topic.objects.get(id=topic_id)
+            if selected_subject and selected_topic.subject_id != selected_subject.id:
+                selected_topic = None
+            else:
+                if not selected_subject:
+                    selected_subject = selected_topic.subject
+        except (ValueError, Topic.DoesNotExist):
+            selected_topic = None
+
+    if selected_topic:
+        topics_queryset = topics_queryset.filter(id=selected_topic.id).order_by('order', 'id')
+    elif selected_subject:
+        topics_queryset = topics_queryset.filter(subject=selected_subject).order_by('order', 'id')
+    else:
+        topics_queryset = topics_queryset.order_by('subject__order', 'order', 'id')
+        
+    from content.models import Subject
+    subjects = Subject.objects.all().order_by('order', 'id')
+    
+    topics_for_dropdown = Topic.objects.select_related('subject').all()
+    if selected_subject:
+        topics_for_dropdown = topics_for_dropdown.filter(subject=selected_subject)
+    topics_for_dropdown = topics_for_dropdown.order_by('subject__order', 'order')
+
     site_config = SiteConfig.get_solo()
     
     quiz_data = []
-    for t in topics:
+    for t in topics_queryset:
         q_count = t.questions.count()
         quiz_data.append({
             'topic': t,
@@ -575,7 +866,14 @@ def portal_quizzes_overview(request):
             'is_ready': q_count >= site_config.default_required_question_count,
         })
         
-    return render(request, 'portal/quizzes_list.html', {'quiz_data': quiz_data, 'required_count': site_config.default_required_question_count})
+    return render(request, 'portal/quizzes_list.html', {
+        'quiz_data': quiz_data, 
+        'required_count': site_config.default_required_question_count,
+        'subjects': subjects,
+        'topics': topics_for_dropdown,
+        'selected_subject': selected_subject,
+        'selected_topic': selected_topic
+    })
 
 # --- ADMIN ATTEMPT HISTORY ---
 

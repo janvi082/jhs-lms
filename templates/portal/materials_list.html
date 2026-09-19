@@ -1,14 +1,113 @@
 {% extends 'portal/base_portal.html' %}
 
-{% block title %}Learning Materials Overview - JHS Admin Portal{% endblock %}
+{% block title %}Learning Materials - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
+<style>
+  tr.material-row { cursor: grab; user-select: none; }
+  tr.material-row.is-dragging {
+    background-color: #fbe9e8 !important;
+    opacity: 0.95;
+    box-shadow: 0 4px 12px rgba(179, 36, 28, 0.15);
+    z-index: 1000;
+    position: relative;
+    cursor: grabbing;
+  }
+  tr.material-row.is-dragging td {
+    background-color: #fbe9e8 !important;
+    border-top: 1px solid #b3241c;
+    border-bottom: 1px solid #b3241c;
+  }
+  tr.material-row.is-reorder-target td {
+    background-color: #f8f9fa !important;
+  }
+  body.is-dragging-global tr.material-row:hover:not(.is-dragging) td {
+    background-color: inherit !important;
+  }
+  .no-select { user-select: none; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
-    <h3 class="fw-bold text-dark mb-1">Learning Materials Overview</h3>
-    <p class="text-muted mb-0">Overview of all PDFs, PPTs, Excel files, OneDrive links, and resources.</p>
+    <h3 class="fw-bold text-dark mb-1">
+      Learning Materials
+      {% if selected_topic %} — {{ selected_topic.name }}{% endif %}
+    </h3>
+    <p class="text-muted mb-0">Overview of Learning Materials across subjects and topics.</p>
   </div>
 </div>
+
+<!-- Filter Bar -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body p-3">
+    <div class="row g-3">
+      <!-- Subject Filter -->
+      <div class="col-12 col-md-6">
+        <label class="fw-semibold text-secondary small mb-1">Filter by Subject:</label>
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+            <span class="text-truncate">{% if selected_subject %}{{ selected_subject.name }}{% else %}All Subjects{% endif %}</span>
+          </button>
+          <div class="dropdown-menu w-100 shadow p-2">
+            <input type="text" class="form-control form-control-sm mb-2 dropdown-search" placeholder="Search subjects..." autocomplete="off">
+            <div class="dropdown-options" style="max-height: 250px; overflow-y: auto;">
+              <a class="dropdown-item {% if not selected_subject %}active{% endif %}" href="?subject_id=&topic_id=">All Subjects</a>
+              {% for s in subjects %}
+                <a class="dropdown-item {% if selected_subject.id == s.id %}active{% endif %}" href="?subject_id={{ s.id }}&topic_id=">{{ s.name }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Topic Filter -->
+      <div class="col-12 col-md-6">
+        <label class="fw-semibold text-secondary small mb-1">Filter by Topic:</label>
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+            <span class="text-truncate">{% if selected_topic %}{{ selected_topic.name }}{% else %}All Topics{% endif %}</span>
+          </button>
+          <div class="dropdown-menu w-100 shadow p-2">
+            <input type="text" class="form-control form-control-sm mb-2 dropdown-search" placeholder="Search topics..." autocomplete="off">
+            <div class="dropdown-options" style="max-height: 250px; overflow-y: auto;">
+              <a class="dropdown-item {% if not selected_topic %}active{% endif %}" href="?subject_id={{ selected_subject.id|default_if_none:'' }}&topic_id=">All Topics (Sequencing disabled)</a>
+              {% for t in topics %}
+                <a class="dropdown-item {% if selected_topic.id == t.id %}active{% endif %}" href="?subject_id={{ t.subject_id }}&topic_id={{ t.id }}">{{ t.name }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Dropdown search functionality
+    document.querySelectorAll('.dropdown-search').forEach(function(input) {
+        input.addEventListener('input', function() {
+            var query = this.value.toLowerCase();
+            var options = this.nextElementSibling.querySelectorAll('.dropdown-item');
+            options.forEach(function(opt) {
+                if (opt.textContent.toLowerCase().indexOf(query) > -1) {
+                    opt.style.display = '';
+                } else {
+                    opt.style.display = 'none';
+                }
+            });
+        });
+    });
+});
+</script>
+
+{% if selected_topic %}
+<div id="reorderControls" class="d-none justify-content-end gap-2 mb-3">
+  <span class="text-danger fw-bold align-self-center me-3">Unsaved order changes</span>
+  <button id="cancelReorderBtn" class="btn btn-outline-secondary">Cancel</button>
+  <button id="saveOrderBtn" class="btn btn-danger">Save Order</button>
+</div>
+{% endif %}
 
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
@@ -16,17 +115,24 @@
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
-            <th class="ps-4">Material Title</th>
+            <th class="ps-4">Order</th>
+            <th>Material Title</th>
             <th>Type</th>
             <th>Subject / Topic</th>
             <th>URL Link</th>
             <th class="text-end pe-4">Action</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="materialsTbody">
           {% for m in materials %}
-          <tr>
-            <td class="ps-4">
+          <tr class="{% if selected_topic %}material-row{% endif %}" data-material-id="{{ m.id }}">
+            <td class="ps-4" style="width: 80px;">
+              {% if selected_topic %}
+              <i class="bi bi-grip-vertical text-secondary drag-handle fs-5 me-1"></i>
+              {% endif %}
+              <span class="fw-bold text-muted display-order">{{ m.order }}</span>
+            </td>
+            <td>
               <div class="fw-bold text-dark">{{ m.title }}</div>
               {% if m.description %}<div class="text-muted small">{{ m.description }}</div>{% endif %}
             </td>
@@ -43,14 +149,22 @@
               </a>
             </td>
             <td class="text-end pe-4">
-              <a href="{% url 'portal_topic_edit' m.topic.id %}" class="btn btn-sm btn-outline-primary">
-                Edit in Topic
-              </a>
+              <div class="d-inline-flex align-items-center gap-3 justify-content-end">
+                <a href="{% url 'portal_topic_edit' m.topic.id %}" class="btn btn-sm btn-outline-primary">
+                  Edit Material Content
+                </a>
+                {% if selected_topic %}
+                <div class="btn-group btn-group-sm shadow-sm" role="group">
+                  <button type="button" class="btn btn-light border p-0 px-2 move-up-btn" title="Move Up"><i class="bi bi-chevron-up" style="font-size: 0.7rem;"></i></button>
+                  <button type="button" class="btn btn-light border p-0 px-2 move-down-btn" title="Move Down"><i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i></button>
+                </div>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="5" class="text-center py-4 text-muted">No learning materials found.</td>
+            <td colspan="6" class="text-center py-4 text-muted">No learning materials found.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -58,4 +172,253 @@
     </div>
   </div>
 </div>
+
+{% if selected_topic %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tbody = document.getElementById('materialsTbody');
+    if (!tbody) return;
+
+    const reorderControls = document.getElementById('reorderControls');
+    const saveBtn = document.getElementById('saveOrderBtn');
+    const cancelBtn = document.getElementById('cancelReorderBtn');
+    
+    let isDragging = false;
+    let dragTarget = null;
+    let startY = 0;
+    let startX = 0;
+    let activeRow = null;
+
+    function swapWith(row1, row2, isUp) {
+        const rows = Array.from(tbody.querySelectorAll('tr.material-row'));
+        const rects = new Map();
+        rows.forEach(r => rects.set(r, r.getBoundingClientRect().top));
+
+        if (isUp) {
+            tbody.insertBefore(row1, row2);
+        } else {
+            tbody.insertBefore(row1, row2.nextElementSibling);
+        }
+
+        rows.forEach(r => {
+            const oldTop = rects.get(r);
+            const newTop = r.getBoundingClientRect().top;
+            const delta = oldTop - newTop;
+            
+            if (delta !== 0) {
+                r.style.transform = `translateY(${delta}px)`;
+                r.style.transition = 'none';
+                
+                void r.offsetHeight;
+                
+                r.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+                r.style.transform = 'translateY(0)';
+                
+                if (r.dataset.swapTimeout) {
+                    clearTimeout(parseInt(r.dataset.swapTimeout));
+                }
+                
+                r.dataset.swapTimeout = setTimeout(() => {
+                    r.style.transition = '';
+                    r.style.transform = '';
+                    delete r.dataset.swapTimeout;
+                }, 200).toString();
+            }
+        });
+    }
+
+    function onPointerMove(e) {
+        if (!activeRow) return;
+        if (e.preventDefault) e.preventDefault();
+        
+        const clientY = e.clientY;
+        const activeRect = activeRow.getBoundingClientRect();
+        const activeMid = activeRect.top + activeRect.height / 2;
+        
+        const siblings = Array.from(tbody.querySelectorAll('tr.material-row')).filter(r => r !== activeRow);
+        
+        siblings.forEach(r => {
+            const rect = r.getBoundingClientRect();
+            if (clientY >= rect.top && clientY <= rect.bottom) {
+                r.classList.add('is-reorder-target');
+            } else {
+                r.classList.remove('is-reorder-target');
+            }
+        });
+        
+        if (clientY < activeMid) {
+            const prevRow = activeRow.previousElementSibling;
+            if (prevRow && prevRow.classList.contains('material-row')) {
+                const prevRect = prevRow.getBoundingClientRect();
+                const prevMid = prevRect.top + prevRect.height / 2;
+                if (clientY < prevMid) {
+                    swapWith(activeRow, prevRow, true);
+                }
+            }
+        } else if (clientY > activeMid) {
+            const nextRow = activeRow.nextElementSibling;
+            if (nextRow && nextRow.classList.contains('material-row')) {
+                const nextRect = nextRow.getBoundingClientRect();
+                const nextMid = nextRect.top + nextRect.height / 2;
+                if (clientY > nextMid) {
+                    swapWith(activeRow, nextRow, false);
+                }
+            }
+        }
+    }
+    
+    function onPointerMoveStart(e) {
+        if (e.preventDefault) e.preventDefault();
+        const dy = Math.abs(e.clientY - startY);
+        const dx = Math.abs(e.clientX - startX);
+        if (dy > 5 || dx > 5) {
+            startActualDrag();
+        }
+    }
+    
+    function startActualDrag() {
+        isDragging = true;
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        
+        activeRow = dragTarget.closest('tr.material-row');
+        if (activeRow) {
+            activeRow.classList.add('is-dragging');
+            document.body.classList.add('no-select');
+            document.body.classList.add('is-dragging-global');
+            document.addEventListener('pointermove', onPointerMove);
+        }
+    }
+    
+    function onPointerUp(e) {
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerUp);
+        
+        const rows = tbody.querySelectorAll('tr.material-row');
+        rows.forEach(r => r.classList.remove('is-reorder-target'));
+        
+        if (isDragging && activeRow) {
+            activeRow.classList.remove('is-dragging');
+            document.body.classList.remove('no-select');
+            document.body.classList.remove('is-dragging-global');
+            activeRow = null;
+            
+            showSaveControls();
+            updateDisplayOrders();
+        }
+        isDragging = false;
+        dragTarget = null;
+    }
+    
+    function initDrag(e) {
+        if (e.button !== 0) return;
+        
+        if (e.target.closest('button, a, input, form, select, .btn-group')) {
+            return;
+        }
+        
+        dragTarget = e.target;
+        startY = e.clientY;
+        startX = e.clientX;
+        isDragging = false;
+        
+        document.addEventListener('pointermove', onPointerMoveStart);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerUp);
+    }
+    
+    function moveUp(btn) {
+        let row = btn.closest('tr');
+        if (row.previousElementSibling && row.previousElementSibling.classList.contains('material-row')) {
+            swapWith(row, row.previousElementSibling, true);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+    
+    function moveDown(btn) {
+        let row = btn.closest('tr');
+        if (row.nextElementSibling && row.nextElementSibling.classList.contains('material-row')) {
+            swapWith(row, row.nextElementSibling, false);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+
+    function addHandlers(row) {
+        row.addEventListener('pointerdown', initDrag);
+        
+        let upBtn = row.querySelector('.move-up-btn');
+        let downBtn = row.querySelector('.move-down-btn');
+        if (upBtn) upBtn.addEventListener('click', function(e) { e.stopPropagation(); moveUp(this); });
+        if (downBtn) downBtn.addEventListener('click', function(e) { e.stopPropagation(); moveDown(this); });
+    }
+
+    let rows = tbody.querySelectorAll('tr.material-row');
+    [].forEach.call(rows, function(row) {
+        addHandlers(row);
+    });
+    
+    function showSaveControls() {
+        if (reorderControls) {
+            reorderControls.classList.remove('d-none');
+            reorderControls.classList.add('d-flex');
+        }
+    }
+    
+    function updateDisplayOrders() {
+        let rows = tbody.querySelectorAll('tr.material-row');
+        rows.forEach((row, index) => {
+            let orderSpan = row.querySelector('.display-order');
+            if (orderSpan) {
+                orderSpan.textContent = (index + 1);
+                orderSpan.classList.add('text-danger');
+            }
+        });
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
+    
+    if (saveBtn) {
+        saveBtn.addEventListener('click', function() {
+            let rows = tbody.querySelectorAll('tr.material-row');
+            let ids = Array.from(rows).map(row => parseInt(row.getAttribute('data-material-id')));
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+            
+            fetch('{% url "portal_resources_reorder" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ 
+                    topic_id: {{ selected_topic.id }},
+                    resource_ids: ids 
+                })
+            })
+            .then(response => response.json().then(data => ({status: response.status, body: data})))
+            .then(res => {
+                if (res.status === 200 && res.body.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error saving order: ' + (res.body.error || 'Unknown error'));
+                    window.location.reload();
+                }
+            })
+            .catch(err => {
+                alert('Network error saving order.');
+                window.location.reload();
+            });
+        });
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

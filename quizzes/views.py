@@ -64,7 +64,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
     if not has_topic_access(request.user, topic):
         raise PermissionDenied
     
-    responses = list(attempt.responses.select_related('question').prefetch_related('selected_choices', 'question__choices').all())
+    responses = list(attempt.responses.select_related('question').prefetch_related('selected_choices', 'question__choices').order_by('id'))
     question_reviews = []
     limitation_message = None
 

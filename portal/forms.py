@@ -19,13 +19,12 @@ class SubjectForm(forms.ModelForm):
 class TopicForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'name', 'summary', 'status', 'order', 'passing_score_override']
+        fields = ['subject', 'name', 'summary', 'status', 'passing_score_override']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Email Etiquette'}),
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary explaining what the learner will learn...'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
-            'order': forms.NumberInput(attrs={'class': 'form-control'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
         }
         labels = {
@@ -35,12 +34,11 @@ class TopicForm(forms.ModelForm):
 class TopicAddForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'name', 'summary', 'order', 'passing_score_override']
+        fields = ['subject', 'name', 'summary', 'passing_score_override']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Email Etiquette'}),
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary...'}),
-            'order': forms.NumberInput(attrs={'class': 'form-control'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
         }
         labels = {
@@ -49,11 +47,9 @@ class TopicAddForm(forms.ModelForm):
 
 
 class VideoForm(forms.ModelForm):
-    order = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Optional order'}))
-
     class Meta:
         model = Video
-        fields = ['title', 'url', 'duration', 'description', 'order']
+        fields = ['title', 'url', 'duration', 'description']
         widgets = {
             'title': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Video Title'}),
             'url': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'https://onedrive.live.com/... or video link'}),
@@ -70,11 +66,9 @@ class VideoForm(forms.ModelForm):
         return url
 
 class ResourceForm(forms.ModelForm):
-    order = forms.IntegerField(required=False, widget=forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Optional order'}))
-
     class Meta:
         model = Resource
-        fields = ['title', 'resource_type', 'url', 'description', 'order']
+        fields = ['title', 'resource_type', 'url', 'description']
         widgets = {
             'title': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Material Title'}),
             'resource_type': forms.Select(attrs={'class': 'form-select'}),

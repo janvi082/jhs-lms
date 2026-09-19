@@ -76,6 +76,10 @@ class Topic(models.Model):
 
     def save(self, *args, **kwargs):
         self.is_active = (self.status == self.STATUS_PUBLISHED)
+        if self.pk is None and not self.order:
+            from django.db.models import Max
+            max_order = Topic.objects.filter(subject=self.subject).aggregate(Max('order'))['order__max']
+            self.order = (max_order or 0) + 1
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -104,6 +108,13 @@ class Video(models.Model):
     class Meta:
         ordering = ['order', 'id']
 
+    def save(self, *args, **kwargs):
+        if self.pk is None and not self.order:
+            from django.db.models import Max
+            max_order = Video.objects.filter(topic=self.topic).aggregate(Max('order'))['order__max']
+            self.order = (max_order or 0) + 1
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.title
 
@@ -130,6 +141,12 @@ class Resource(models.Model):
 
     class Meta:
         ordering = ['order', 'id']
+
+    def save(self, *args, **kwargs):
+        if self.pk is None and not self.order:
+            max_order = Resource.objects.filter(topic=self.topic).aggregate(models.Max('order'))['order__max']
+            self.order = (max_order or 0) + 1
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.title} ({self.get_resource_type_display()})"

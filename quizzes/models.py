@@ -35,6 +35,12 @@ class Question(models.Model):
     class Meta:
         ordering = ['order', 'id']
 
+    def save(self, *args, **kwargs):
+        if self.pk is None and getattr(self, 'order', 0) == 0:
+            max_order = Question.objects.filter(topic=self.topic).aggregate(models.Max('order'))['order__max']
+            self.order = (max_order or 0) + 1
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.get_question_type_display()}] Q{self.order}: {self.text[:50]}"
 

@@ -3,6 +3,31 @@
 {% block title %}Manage Topics - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
+
+<style>
+  tr.topic-row { cursor: grab; user-select: none; }
+  tr.topic-row.is-dragging {
+    background-color: #fbe9e8 !important;
+    opacity: 0.95;
+    box-shadow: 0 4px 12px rgba(179, 36, 28, 0.15);
+    z-index: 1000;
+    position: relative;
+    cursor: grabbing;
+  }
+  tr.topic-row.is-dragging td {
+    background-color: #fbe9e8 !important;
+    border-top: 1px solid #b3241c;
+    border-bottom: 1px solid #b3241c;
+  }
+  tr.topic-row.is-reorder-target td {
+    background-color: #f8f9fa !important;
+  }
+  body.is-dragging-global tr.topic-row:hover:not(.is-dragging) td {
+    background-color: inherit !important;
+  }
+  .no-select { user-select: none; }
+</style>
+
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
     <h3 class="fw-bold text-dark mb-1">
@@ -34,6 +59,14 @@
   </div>
 </div>
 
+
+{% if selected_subject %}
+<div id="reorderControls" class="d-none justify-content-end gap-2 mb-3">
+  <span class="text-danger fw-bold align-self-center me-3">Unsaved order changes</span>
+  <button id="cancelReorderBtn" class="btn btn-outline-secondary">Cancel</button>
+  <button id="saveOrderBtn" class="btn btn-danger">Save Order</button>
+</div>
+{% endif %}
 <!-- Topics Table -->
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
@@ -49,10 +82,15 @@
             <th class="text-end pe-4">Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="topicsTbody">
           {% for t in topics %}
-          <tr>
-            <td class="ps-4 fw-bold text-muted">{{ t.order }}</td>
+          <tr class="{% if selected_subject %}topic-row{% endif %}" data-topic-id="{{ t.id }}">
+            <td class="ps-4" style="width: 80px;">
+              {% if selected_subject %}
+              <i class="bi bi-grip-vertical text-secondary drag-handle fs-5 me-1"></i>
+              {% endif %}
+              <span class="fw-bold text-muted display-order">{{ t.order }}</span>
+            </td>
             <td>
               <div class="fw-bold text-dark">{{ t.name }}</div>
               <div class="text-muted small text-truncate-1" style="max-width: 350px;">{{ t.summary }}</div>
@@ -74,10 +112,19 @@
                 {{ t.questions.count }} questions
               </span>
             </td>
+            
             <td class="text-end pe-4">
-              <a href="{% url 'portal_topic_edit' t.id %}" class="btn btn-sm btn-primary">
-                <i class="bi bi-pencil-square me-1"></i> Edit Topic Content
-              </a>
+              <div class="d-inline-flex align-items-center gap-3 justify-content-end">
+                <a href="{% url 'portal_topic_edit' t.id %}" class="btn btn-sm btn-primary">
+                  <i class="bi bi-pencil-square me-1"></i> Edit Topic Content
+                </a>
+                {% if selected_subject %}
+                <div class="btn-group btn-group-sm shadow-sm" role="group">
+                  <button type="button" class="btn btn-light border p-0 px-2 move-up-btn" title="Move Up"><i class="bi bi-chevron-up" style="font-size: 0.7rem;"></i></button>
+                  <button type="button" class="btn btn-light border p-0 px-2 move-down-btn" title="Move Down"><i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i></button>
+                </div>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% empty %}
@@ -128,10 +175,7 @@
             <label class="form-label fw-semibold">Topic Summary (2-4 lines)</label>
             {{ form.summary }}
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Display Order</label>
-            {{ form.order }}
-          </div>
+
           <div class="alert alert-info small mb-0">
             <i class="bi bi-info-circle me-1"></i> Topics are saved as <strong>Draft</strong> initially until you add the required minimum questions.
           </div>
@@ -144,4 +188,254 @@
     </div>
   </div>
 </div>
+{% if selected_subject %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tbody = document.getElementById('topicsTbody');
+    if (!tbody) return;
+
+    const reorderControls = document.getElementById('reorderControls');
+    const saveBtn = document.getElementById('saveOrderBtn');
+    const cancelBtn = document.getElementById('cancelReorderBtn');
+    
+    let isDragging = false;
+    let dragTarget = null;
+    let startY = 0;
+    let startX = 0;
+    let activeRow = null;
+
+    function swapWith(row1, row2, isUp) {
+        const rows = Array.from(tbody.querySelectorAll('tr.topic-row'));
+        const rects = new Map();
+        rows.forEach(r => rects.set(r, r.getBoundingClientRect().top));
+
+        if (isUp) {
+            tbody.insertBefore(row1, row2);
+        } else {
+            tbody.insertBefore(row1, row2.nextElementSibling);
+        }
+
+        rows.forEach(r => {
+            const oldTop = rects.get(r);
+            const newTop = r.getBoundingClientRect().top;
+            const delta = oldTop - newTop;
+            
+            if (delta !== 0) {
+                r.style.transform = `translateY(${delta}px)`;
+                r.style.transition = 'none';
+                
+                void r.offsetHeight;
+                
+                r.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+                r.style.transform = 'translateY(0)';
+                
+                if (r.dataset.swapTimeout) {
+                    clearTimeout(parseInt(r.dataset.swapTimeout));
+                }
+                
+                r.dataset.swapTimeout = setTimeout(() => {
+                    r.style.transition = '';
+                    r.style.transform = '';
+                    delete r.dataset.swapTimeout;
+                }, 200).toString();
+            }
+        });
+    }
+
+    function onPointerMove(e) {
+        if (!activeRow) return;
+        if (e.preventDefault) e.preventDefault();
+        
+        const clientY = e.clientY;
+        const activeRect = activeRow.getBoundingClientRect();
+        const activeMid = activeRect.top + activeRect.height / 2;
+        
+        const siblings = Array.from(tbody.querySelectorAll('tr.topic-row')).filter(r => r !== activeRow);
+        
+        siblings.forEach(r => {
+            const rect = r.getBoundingClientRect();
+            if (clientY >= rect.top && clientY <= rect.bottom) {
+                r.classList.add('is-reorder-target');
+            } else {
+                r.classList.remove('is-reorder-target');
+            }
+        });
+        
+        if (clientY < activeMid) {
+            const prevRow = activeRow.previousElementSibling;
+            if (prevRow && prevRow.classList.contains('topic-row')) {
+                const prevRect = prevRow.getBoundingClientRect();
+                const prevMid = prevRect.top + prevRect.height / 2;
+                if (clientY < prevMid) {
+                    swapWith(activeRow, prevRow, true);
+                }
+            }
+        } else if (clientY > activeMid) {
+            const nextRow = activeRow.nextElementSibling;
+            if (nextRow && nextRow.classList.contains('topic-row')) {
+                const nextRect = nextRow.getBoundingClientRect();
+                const nextMid = nextRect.top + nextRect.height / 2;
+                if (clientY > nextMid) {
+                    swapWith(activeRow, nextRow, false);
+                }
+            }
+        }
+    }
+    
+    function onPointerMoveStart(e) {
+        if (e.preventDefault) e.preventDefault();
+        const dy = Math.abs(e.clientY - startY);
+        const dx = Math.abs(e.clientX - startX);
+        if (dy > 5 || dx > 5) {
+            startActualDrag();
+        }
+    }
+    
+    function startActualDrag() {
+        isDragging = true;
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        
+        activeRow = dragTarget.closest('tr.topic-row');
+        if (activeRow) {
+            activeRow.classList.add('is-dragging');
+            document.body.classList.add('no-select');
+            document.body.classList.add('is-dragging-global');
+            document.addEventListener('pointermove', onPointerMove);
+        }
+    }
+    
+    function onPointerUp(e) {
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerUp);
+        
+        const rows = tbody.querySelectorAll('tr.topic-row');
+        rows.forEach(r => r.classList.remove('is-reorder-target'));
+        
+        if (isDragging && activeRow) {
+            activeRow.classList.remove('is-dragging');
+            document.body.classList.remove('no-select');
+            document.body.classList.remove('is-dragging-global');
+            activeRow = null;
+            
+            showSaveControls();
+            updateDisplayOrders();
+        }
+        isDragging = false;
+        dragTarget = null;
+    }
+    
+    function initDrag(e) {
+        if (e.button !== 0) return;
+        
+        if (e.target.closest('button, a, input, form, .btn-group')) {
+            return;
+        }
+        
+        dragTarget = e.target;
+        startY = e.clientY;
+        startX = e.clientX;
+        isDragging = false;
+        
+        document.addEventListener('pointermove', onPointerMoveStart);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerUp);
+    }
+    
+    function moveUp(btn) {
+        let row = btn.closest('tr');
+        if (row.previousElementSibling && row.previousElementSibling.classList.contains('topic-row')) {
+            swapWith(row, row.previousElementSibling, true);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+    
+    function moveDown(btn) {
+        let row = btn.closest('tr');
+        if (row.nextElementSibling && row.nextElementSibling.classList.contains('topic-row')) {
+            swapWith(row, row.nextElementSibling, false);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+
+    function addHandlers(row) {
+        row.addEventListener('pointerdown', initDrag);
+        
+        let upBtn = row.querySelector('.move-up-btn');
+        let downBtn = row.querySelector('.move-down-btn');
+        if (upBtn) upBtn.addEventListener('click', function(e) { e.stopPropagation(); moveUp(this); });
+        if (downBtn) downBtn.addEventListener('click', function(e) { e.stopPropagation(); moveDown(this); });
+    }
+
+    let rows = tbody.querySelectorAll('tr.topic-row');
+    [].forEach.call(rows, function(row) {
+        addHandlers(row);
+    });
+    
+    function showSaveControls() {
+        if (reorderControls) {
+            reorderControls.classList.remove('d-none');
+            reorderControls.classList.add('d-flex');
+        }
+    }
+    
+    function updateDisplayOrders() {
+        let rows = tbody.querySelectorAll('tr.topic-row');
+        rows.forEach((row, index) => {
+            let orderSpan = row.querySelector('.display-order');
+            if (orderSpan) {
+                orderSpan.textContent = (index + 1);
+                orderSpan.classList.add('text-danger');
+            }
+        });
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
+    
+    if (saveBtn) {
+        saveBtn.addEventListener('click', function() {
+            let rows = tbody.querySelectorAll('tr.topic-row');
+            let ids = Array.from(rows).map(row => row.getAttribute('data-topic-id'));
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+            
+            fetch('{% url "portal_topics_reorder" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ 
+                    subject_id: {{ selected_subject.id }},
+                    topic_ids: ids 
+                })
+            })
+            .then(response => response.json().then(data => ({status: response.status, body: data})))
+            .then(res => {
+                if (res.status === 200 && res.body.status === 'ok') {
+                    window.location.reload();
+                } else {
+                    alert('Error saving order: ' + (res.body.message || 'Unknown error'));
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = 'Save Order';
+                }
+            })
+            .catch(err => {
+                alert('Network error saving order.');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = 'Save Order';
+            });
+        });
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

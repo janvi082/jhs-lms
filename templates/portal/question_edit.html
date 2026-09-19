@@ -3,6 +3,28 @@
 {% block title %}Manage Questions: {{ topic.name }} - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
+<style>
+  div.question-row { cursor: grab; user-select: none; }
+  div.question-row.is-dragging {
+    background-color: #fbe9e8 !important;
+    opacity: 0.95;
+    box-shadow: 0 4px 12px rgba(179, 36, 28, 0.15);
+    z-index: 1000;
+    position: relative;
+    cursor: grabbing;
+  }
+  div.question-row.is-dragging .card {
+    background-color: #fbe9e8 !important;
+    border: 1px solid #b3241c !important;
+  }
+  div.question-row.is-reorder-target .card {
+    background-color: #f8f9fa !important;
+  }
+  body.is-dragging-global div.question-row:hover:not(.is-dragging) .card {
+    background-color: inherit !important;
+  }
+  .no-select { user-select: none; }
+</style>
 <div class="mb-3">
   <a href="{% url 'portal_topic_edit' topic.id %}" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left me-1"></i> Back to Topic Editor
@@ -26,12 +48,13 @@
 <!-- Questions List -->
 <div class="row g-4 mb-4">
   {% for q in questions %}
-  <div class="col-12">
+  <div class="col-12 question-row" data-question-id="{{ q.id }}">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-        <div>
-          <span class="badge bg-light text-dark border me-1">Q{{ forloop.counter }}</span>
-          <span class="badge bg-primary me-1">{{ q.get_question_type_display }}</span>
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center gap-3">
+        <div class="d-flex align-items-center flex-grow-1">
+          <i class="bi bi-grip-vertical text-muted me-2" style="cursor: grab;"></i>
+          <span class="badge bg-light text-dark border me-2 display-order">{{ forloop.counter }}</span>
+          <span class="badge bg-primary me-2">{{ q.get_question_type_display }}</span>
           {% if q.required %}
             <span class="badge bg-secondary me-2">Required</span>
           {% else %}
@@ -39,12 +62,18 @@
           {% endif %}
           <span class="fw-bold text-dark">{{ q.text }}</span>
         </div>
-        <form action="{% url 'portal_question_delete' q.id %}" method="post" onsubmit="return confirm('Delete this question?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-trash me-1"></i> Delete
-          </button>
-        </form>
+        <div class="d-flex gap-2 flex-shrink-0">
+          <div class="btn-group">
+            <button type="button" class="btn btn-sm btn-outline-secondary move-up-btn" title="Move Up"><i class="bi bi-chevron-up"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary move-down-btn" title="Move Down"><i class="bi bi-chevron-down"></i></button>
+          </div>
+          <form action="{% url 'portal_question_delete' q.id %}" method="post" onsubmit="return confirm('Delete this question?');" class="mb-0">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+              <i class="bi bi-trash me-1"></i> Delete
+            </button>
+          </form>
+        </div>
       </div>
       <div class="card-body p-3">
         {% if q.question_type == 'single' or q.question_type == 'multiple' or q.question_type == 'true_false' %}
@@ -233,5 +262,254 @@ function toggleQuestionTypeFields() {
   document.getElementById('shortAnswerFields').style.display = (qType === 'short_answer') ? 'block' : 'none';
   document.getElementById('paragraphFields').style.display = (qType === 'paragraph') ? 'block' : 'none';
 }
+</script>
+</script>
+
+<!-- Reorder Controls -->
+<div id="reorderControls" class="position-fixed bottom-0 start-50 translate-middle-x mb-4 bg-white p-3 rounded-pill shadow-lg border d-none align-items-center gap-3" style="z-index: 1050;">
+  <span class="fw-bold text-dark"><i class="bi bi-info-circle me-1"></i> Unsaved changes</span>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" id="cancelReorderBtn">Cancel</button>
+    <button type="button" class="btn btn-sm btn-success rounded-pill px-3" id="saveReorderBtn">
+      <i class="bi bi-check-lg me-1"></i> Save Order
+    </button>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let reorderControls = document.getElementById('reorderControls');
+    let cancelBtn = document.getElementById('cancelReorderBtn');
+    let saveBtn = document.getElementById('saveReorderBtn');
+    let container = document.querySelector('.row.g-4');
+    
+    let dragTarget = null;
+    let activeRow = null;
+    let startY = 0;
+    let startX = 0;
+    let isDragging = false;
+    
+    function swapWith(rowA, rowB, animate) {
+        if (!rowA || !rowB || rowA === rowB) return;
+        
+        let rectA = rowA.getBoundingClientRect();
+        let rectB = rowB.getBoundingClientRect();
+        
+        let nextSibling = rowA.nextElementSibling === rowB ? rowA : rowA.nextElementSibling;
+        rowB.parentNode.insertBefore(rowA, rowB);
+        if (nextSibling !== rowA) {
+            rowA.parentNode.insertBefore(rowB, nextSibling);
+        } else {
+            rowA.parentNode.insertBefore(rowB, rowA);
+        }
+        
+        if (animate) {
+            let dy = rectA.top - rowA.getBoundingClientRect().top;
+            rowA.style.transform = `translateY(${dy}px)`;
+            rowA.style.transition = 'none';
+            
+            let dyB = rectB.top - rowB.getBoundingClientRect().top;
+            rowB.style.transform = `translateY(${dyB}px)`;
+            rowB.style.transition = 'none';
+            
+            requestAnimationFrame(() => {
+                rowA.style.transform = '';
+                rowA.style.transition = 'transform 0.2s ease-out';
+                rowB.style.transform = '';
+                rowB.style.transition = 'transform 0.2s ease-out';
+                
+                setTimeout(() => {
+                    rowA.style.transition = '';
+                    rowB.style.transition = '';
+                }, 200);
+            });
+        }
+    }
+    
+    function onPointerMove(e) {
+        if (!isDragging || !activeRow) return;
+        
+        let rows = container.querySelectorAll('div.question-row');
+        let y = e.clientY;
+        
+        rows.forEach(r => r.classList.remove('is-reorder-target'));
+        
+        for (let i = 0; i < rows.length; i++) {
+            let row = rows[i];
+            if (row === activeRow) continue;
+            
+            let rect = row.getBoundingClientRect();
+            let mid = rect.top + rect.height / 2;
+            
+            if (y > rect.top && y < rect.bottom) {
+                row.classList.add('is-reorder-target');
+                if (y < mid) {
+                    swapWith(activeRow, row, false);
+                } else {
+                    let nextRow = rows[i + 1];
+                    if (nextRow && nextRow !== activeRow) {
+                        let nextRect = nextRow.getBoundingClientRect();
+                        let nextMid = nextRect.top + nextRect.height / 2;
+                        if (y > nextMid) {
+                            swapWith(activeRow, nextRow, false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    function onPointerMoveStart(e) {
+        if (e.preventDefault) e.preventDefault();
+        const dy = Math.abs(e.clientY - startY);
+        const dx = Math.abs(e.clientX - startX);
+        if (dy > 5 || dx > 5) {
+            startActualDrag();
+        }
+    }
+    
+    function startActualDrag() {
+        isDragging = true;
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        
+        activeRow = dragTarget.closest('div.question-row');
+        if (activeRow) {
+            activeRow.classList.add('is-dragging');
+            document.body.classList.add('no-select');
+            document.body.classList.add('is-dragging-global');
+            document.addEventListener('pointermove', onPointerMove);
+        }
+    }
+    
+    function onPointerUp(e) {
+        document.removeEventListener('pointermove', onPointerMoveStart);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerUp);
+        
+        const rows = container.querySelectorAll('div.question-row');
+        rows.forEach(r => r.classList.remove('is-reorder-target'));
+        
+        if (isDragging && activeRow) {
+            activeRow.classList.remove('is-dragging');
+            document.body.classList.remove('no-select');
+            document.body.classList.remove('is-dragging-global');
+            activeRow = null;
+            
+            showSaveControls();
+            updateDisplayOrders();
+        }
+        isDragging = false;
+        dragTarget = null;
+    }
+    
+    function initDrag(e) {
+        if (e.button !== 0) return;
+        
+        if (e.target.closest('button, a, input, form, select, .btn-group')) {
+            return;
+        }
+        
+        dragTarget = e.target;
+        startY = e.clientY;
+        startX = e.clientX;
+        isDragging = false;
+        
+        document.addEventListener('pointermove', onPointerMoveStart);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerUp);
+    }
+    
+    function moveUp(btn) {
+        let row = btn.closest('div.question-row');
+        if (row.previousElementSibling && row.previousElementSibling.classList.contains('question-row')) {
+            swapWith(row, row.previousElementSibling, true);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+    
+    function moveDown(btn) {
+        let row = btn.closest('div.question-row');
+        if (row.nextElementSibling && row.nextElementSibling.classList.contains('question-row')) {
+            swapWith(row, row.nextElementSibling, false);
+            showSaveControls();
+            updateDisplayOrders();
+        }
+    }
+
+    function addHandlers(row) {
+        row.addEventListener('pointerdown', initDrag);
+        
+        let upBtn = row.querySelector('.move-up-btn');
+        let downBtn = row.querySelector('.move-down-btn');
+        if (upBtn) upBtn.addEventListener('click', function(e) { e.stopPropagation(); moveUp(this); });
+        if (downBtn) downBtn.addEventListener('click', function(e) { e.stopPropagation(); moveDown(this); });
+    }
+
+    let rows = container.querySelectorAll('div.question-row');
+    [].forEach.call(rows, function(row) {
+        addHandlers(row);
+    });
+    
+    function showSaveControls() {
+        if (reorderControls) {
+            reorderControls.classList.remove('d-none');
+            reorderControls.classList.add('d-flex');
+        }
+    }
+    
+    function updateDisplayOrders() {
+        let rows = container.querySelectorAll('div.question-row');
+        rows.forEach((row, index) => {
+            let orderSpan = row.querySelector('.display-order');
+            if (orderSpan) {
+                orderSpan.textContent = (index + 1);
+                orderSpan.classList.add('text-danger');
+            }
+        });
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
+    
+    if (saveBtn) {
+        saveBtn.addEventListener('click', function() {
+            let rows = container.querySelectorAll('div.question-row');
+            let ids = Array.from(rows).map(row => parseInt(row.getAttribute('data-question-id')));
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+            
+            fetch('{% url "portal_questions_reorder" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ 
+                    topic_id: {{ topic.id }},
+                    question_ids: ids 
+                })
+            })
+            .then(response => response.json().then(data => ({status: response.status, body: data})))
+            .then(res => {
+                if (res.status === 200 && res.body.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error saving order: ' + (res.body.error || 'Unknown error'));
+                    window.location.reload();
+                }
+            })
+            .catch(err => {
+                alert('Network error saving order.');
+                window.location.reload();
+            });
+        });
+    }
+});
 </script>
 {% endblock %}

@@ -1,6 +1,7 @@
 from functools import wraps
 from django.http import HttpResponseForbidden
 from django.contrib import messages
+from django.shortcuts import redirect
 
 def admin_required(view_func):
     @wraps(view_func)
