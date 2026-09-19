@@ -24,7 +24,7 @@ class TopicInline(SortableInlineAdminMixin, admin.TabularInline):
 
 @admin.register(Subject)
 class SubjectAdmin(SortableAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'order', 'topic_count_display', 'is_active')
+    list_display = ('name', 'order', 'topic_count_display', 'is_active', 'passing_score_override')
     list_filter = ('is_active',)
     search_fields = ('name', 'description')
     prepopulated_fields = {'slug': ('name',)}

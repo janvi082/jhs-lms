@@ -6,14 +6,16 @@ from accounts.models import User
 class SubjectForm(forms.ModelForm):
     class Meta:
         model = Subject
-        fields = ['name', 'description', 'is_active']
+        fields = ['name', 'description', 'is_active', 'passing_score_override']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Communication Skills'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Subject overview...'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
         }
         labels = {
-            'is_active': 'Active in Portal Catalog'
+            'is_active': 'Active in Portal Catalog',
+            'passing_score_override': 'Passing Score Override (%)',
         }
 
 class TopicForm(forms.ModelForm):

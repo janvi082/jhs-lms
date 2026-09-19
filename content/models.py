@@ -29,6 +29,10 @@ class Subject(models.Model):
     description = models.TextField(blank=True)
     order = models.PositiveIntegerField(default=0, blank=True)
     is_active = models.BooleanField(default=True)
+    passing_score_override = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Optional passing score percentage override for all topics in this subject"
+    )
 
     class Meta:
         ordering = ['order', 'name']
@@ -89,6 +93,8 @@ class Topic(models.Model):
     def effective_passing_score(self):
         if self.passing_score_override is not None:
             return self.passing_score_override
+        if self.subject.passing_score_override is not None:
+            return self.subject.passing_score_override
         return SiteConfig.get_solo().default_passing_score
 
     def is_assessment_ready(self):
