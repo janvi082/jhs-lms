@@ -176,9 +176,16 @@
     <div class="card bg-light border-0">
       <div class="card-body p-3 text-center">
         <span class="text-muted small d-block mb-1">Next Topic in {{ subject.name }}</span>
+        {% if next_topic_unlocked %}
         <a href="{% url 'topic_detail' subject.slug next_topic.id %}" class="fw-bold text-primary text-decoration-none">
           {{ next_topic.name }} <i class="bi bi-arrow-right"></i>
         </a>
+        {% else %}
+        <div class="fw-bold text-muted opacity-75">
+          <i class="bi bi-lock-fill"></i> {{ next_topic.name }}
+          <div class="small fw-normal mt-1">Complete this topic to unlock</div>
+        </div>
+        {% endif %}
       </div>
     </div>
     {% endif %}

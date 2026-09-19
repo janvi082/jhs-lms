@@ -32,7 +32,7 @@
             <h3 class="fw-bold text-danger mb-1">Assessment Not Passed</h3>
             <span class="badge bg-danger fs-6 px-3 py-2 mb-3">FAIL</span>
             <div class="h2 fw-bold text-dark my-2">{{ attempt.score }}%</div>
-            <p class="text-muted small mb-0">Required passing score: <strong>{{ effective_passing_score }}%</strong></p>
+            <p class="text-muted small mb-0">Required passing score: <strong>{{ effective_passing_score }}%</strong>. Retake the assessment to continue.</p>
         </div>
     {% endif %}
 {% else %}
@@ -93,9 +93,17 @@
             <i class="bi bi-arrow-counterclockwise me-1"></i> Retake Assessment
           </a>
           {% if next_topic %}
+            {% if next_topic_unlocked %}
             <a href="{% url 'topic_detail' subject.slug next_topic.id %}" class="btn btn-success px-4 py-2">
               Next Topic: {{ next_topic.name }} <i class="bi bi-arrow-right ms-1"></i>
             </a>
+            {% else %}
+            <div class="btn btn-secondary px-4 py-2 opacity-75" style="cursor: not-allowed;">
+              <i class="bi bi-lock-fill me-1"></i> Next Topic Locked<br>
+              {{ next_topic.name }}<br>
+              <div class="small fw-normal mt-1">Complete this topic with a passing score of {{ effective_passing_score }}% to unlock.</div>
+            </div>
+            {% endif %}
           {% else %}
             <a href="{% url 'subject_detail' subject.slug %}" class="btn btn-success px-4 py-2">
               Back to Subject Index <i class="bi bi-check-all ms-1"></i>

@@ -105,6 +105,10 @@
                           <label class="form-label fw-semibold">Description</label>
                           <textarea name="description" class="form-control" rows="3">{{ sub.description }}</textarea>
                         </div>
+                        <div class="mb-3">
+                          <label class="form-label fw-semibold">Passing Score Override (%)</label>
+                          <input type="number" name="passing_score_override" class="form-control" value="{{ sub.passing_score_override|default_if_none:'' }}" placeholder="Leave blank to use default (75%)">
+                        </div>
                         <div class="form-check mb-2">
                           <input type="checkbox" name="is_active" class="form-check-input" id="activeCheck{{ sub.id }}" {% if sub.is_active %}checked{% endif %}>
                           <label class="form-check-label" for="activeCheck{{ sub.id }}">Active in Portal Catalog</label>
@@ -149,6 +153,10 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Description</label>
             {{ form.description }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">{{ form.passing_score_override.label }}</label>
+            {{ form.passing_score_override }}
           </div>
           <div class="form-check mb-2">
             {{ form.is_active }}

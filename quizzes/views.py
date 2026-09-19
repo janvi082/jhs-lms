@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseBadRequest
 from django.core.exceptions import PermissionDenied
 from content.models import Topic
-from progress.services import submit_quiz_attempt, get_topic_display_status
+from progress.services import submit_quiz_attempt, get_topic_display_status, is_topic_unlocked, get_next_topic
 from .models import Question, Choice, QuizAttempt
 from access.services import has_topic_access
 
@@ -13,6 +13,9 @@ def quiz_modal(request, slug, topic_id):
     topic = get_object_or_404(Topic, id=topic_id, subject__slug=slug, is_active=True)
     # Access control: deny if learner lacks access to the topic
     if not has_topic_access(request.user, topic):
+        raise PermissionDenied
+    # Progression lock: deny if topic is locked
+    if not is_topic_unlocked(request.user, topic):
         raise PermissionDenied
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
@@ -138,11 +141,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
     has_gradable = gradable_questions > 0
 
     # Determine next topic (simple progression)
-    next_topic = Topic.objects.filter(
-        subject=topic.subject,
-        is_active=True,
-        order__gt=topic.order
-    ).first()
+    next_topic = get_next_topic(topic)
 
     context = {
         'subject': topic.subject,
@@ -156,6 +155,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
         'question_reviews': question_reviews,
         'limitation_message': limitation_message,
         'next_topic': next_topic,
+        'next_topic_unlocked': is_topic_unlocked(request.user, next_topic) if next_topic else False,
         'effective_passing_score': attempt.passing_score_used,
     }
     return render(request, 'learner/quiz_result_partial.html', context)
@@ -168,6 +168,9 @@ def quiz_submit(request, topic_id):
     topic = get_object_or_404(Topic, id=topic_id, is_active=True)
     # Access control: deny if learner lacks access to the topic
     if not has_topic_access(request.user, topic):
+        raise PermissionDenied
+    # Progression lock: deny if topic is locked
+    if not is_topic_unlocked(request.user, topic):
         raise PermissionDenied
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")

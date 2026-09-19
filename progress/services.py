@@ -4,6 +4,52 @@ from content.models import Subject, Topic, SiteConfig
 from quizzes.models import Question, QuizAttempt
 from .models import TopicProgress
 
+def get_effective_passing_score(topic):
+    return topic.effective_passing_score
+
+def get_next_topic(topic):
+    return Topic.objects.filter(
+        subject=topic.subject,
+        is_active=True
+    ).filter(
+        Q(order__gt=topic.order) | Q(order=topic.order, id__gt=topic.id)
+    ).order_by('order', 'id').first()
+
+def is_topic_unlocked(user, topic):
+    if getattr(user, 'is_admin_user', False):
+        return True
+
+    if TopicProgress.objects.filter(user=user, topic=topic, status=TopicProgress.STATUS_COMPLETED).exists():
+        return True
+
+    previous_topic = Topic.objects.filter(
+        subject=topic.subject,
+        is_active=True
+    ).filter(
+        Q(order__lt=topic.order) | Q(order=topic.order, id__lt=topic.id)
+    ).order_by('-order', '-id').first()
+
+    if not previous_topic:
+        return True
+
+    return TopicProgress.objects.filter(
+        user=user,
+        topic=previous_topic,
+        status=TopicProgress.STATUS_COMPLETED
+    ).exists()
+
+def complete_zero_question_topic(user, topic):
+    from access.services import has_subject_access, has_topic_access
+    if topic.questions.count() == 0:
+        if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
+            if is_topic_unlocked(user, topic):
+                progress, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
+                if progress.status != TopicProgress.STATUS_COMPLETED:
+                    progress.status = TopicProgress.STATUS_COMPLETED
+                    if progress.completed_at is None:
+                        progress.completed_at = timezone.now()
+                    progress.save(update_fields=['status', 'completed_at'])
+
 def record_topic_view(user, topic):
     """
     Get or create TopicProgress when a learner visits a topic page.
@@ -24,6 +70,9 @@ def record_topic_view(user, topic):
         progress.last_accessed = timezone.now()
         progress.save(update_fields=['status', 'last_accessed'])
         
+    complete_zero_question_topic(user, topic)
+    progress.refresh_from_db()
+
     return progress
 
 def get_topic_display_status(progress):

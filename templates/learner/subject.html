@@ -64,15 +64,24 @@
 
 <div class="topic-list-group">
   {% for item in topics_data %}
+  {% if item.is_unlocked %}
   <a href="{% url 'topic_detail' subject.slug item.topic.id %}" class="list-group-item list-group-item-action p-3 text-decoration-none">
+  {% else %}
+  <div class="list-group-item p-3 text-decoration-none opacity-50 bg-light">
+  {% endif %}
     <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
       <div class="d-flex align-items-center gap-3">
         <span class="fw-bold text-muted" style="min-width: 32px;">
           {% if forloop.counter < 10 %}0{% endif %}{{ forloop.counter }}.
         </span>
         <div>
-          <h5 class="mb-1 text-dark fw-semibold fs-6">{{ item.topic.name }}</h5>
+          <h5 class="mb-1 text-dark fw-semibold fs-6">
+            {% if not item.is_unlocked %}<i class="bi bi-lock-fill text-muted me-1"></i>{% endif %}{{ item.topic.name }}
+          </h5>
           <p class="text-muted small mb-0 text-truncate-1" style="max-width: 600px;">{{ item.topic.summary }}</p>
+          {% if not item.is_unlocked %}
+          <div class="text-muted small fw-bold mt-1">Complete the previous topic to unlock</div>
+          {% endif %}
         </div>
       </div>
 
@@ -86,10 +95,18 @@
         <span class="badge {{ item.display_status.badge_class }} px-3 py-2">
           {{ item.display_status.icon }} {{ item.display_status.label }}
         </span>
+        {% if not item.is_unlocked %}
+        <i class="bi bi-lock-fill text-muted"></i>
+        {% else %}
         <i class="bi bi-chevron-right text-muted"></i>
+        {% endif %}
       </div>
     </div>
+  {% if item.is_unlocked %}
   </a>
+  {% else %}
+  </div>
+  {% endif %}
   {% empty %}
   <div class="text-center py-5 bg-white rounded border">
     <i class="bi bi-journal-x text-muted display-4"></i>

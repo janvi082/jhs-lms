@@ -12,6 +12,8 @@ from progress.services import (
     get_topic_display_status,
     get_subject_progress_summary,
     get_overall_learner_progress,
+    is_topic_unlocked,
+    get_next_topic,
 )
 from access.services import has_subject_access, has_topic_access
 @login_required
@@ -73,6 +75,7 @@ def subject_detail(request, slug):
             'display_status': display_status,
             'best_score': prog.best_score if prog and prog.attempts_count > 0 else None,
             'is_ready': topic.is_assessment_ready(),
+            'is_unlocked': is_topic_unlocked(request.user, topic),
         })
         
     summary = get_subject_progress_summary(request.user, subject)
@@ -91,6 +94,9 @@ def topic_detail(request, slug, topic_id):
     # Access control: deny if learner lacks access to the topic
     if not has_topic_access(request.user, topic):
         raise PermissionDenied
+    # Progression lock: deny if topic is locked
+    if not is_topic_unlocked(request.user, topic):
+        raise PermissionDenied
     # Record view and flip status to in_progress if not_started
     progress = record_topic_view(request.user, topic)
     display_status = get_topic_display_status(progress)
@@ -98,7 +104,6 @@ def topic_detail(request, slug, topic_id):
     videos = list(topic.videos.all())
     resources = list(topic.resources.all())
     # Prepare attempt data with review-aware display
-
 
     attempts_qs = QuizAttempt.objects.filter(user=request.user, topic=topic).order_by('-created_at')
     attempts_data = []
@@ -117,11 +122,7 @@ def topic_detail(request, slug, topic_id):
         })
     
     # Determine next topic (simple progression)
-    next_topic = Topic.objects.filter(
-        subject=topic.subject,
-        is_active=True,
-        order__gt=topic.order
-    ).first()
+    next_topic = get_next_topic(topic)
     
     site_config = SiteConfig.get_solo()
     
@@ -134,6 +135,7 @@ def topic_detail(request, slug, topic_id):
         'resources': resources,
         'attempts_data': attempts_data,
         'next_topic': next_topic,
+        'next_topic_unlocked': is_topic_unlocked(request.user, next_topic) if next_topic else False,
         'effective_passing_score': topic.effective_passing_score,
         'required_question_count': site_config.default_required_question_count,
         'question_count': topic.questions.count(),
