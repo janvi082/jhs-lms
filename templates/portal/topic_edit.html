@@ -60,23 +60,37 @@
           <label class="form-label fw-semibold">Topic Summary (2-4 lines)</label>
           {{ form.summary }}
         </div>
-        <div class="col-md-4">
-          <label class="form-label fw-semibold">Publication Status</label>
-          {{ form.status }}
-        </div>
+        <div class="row mb-3">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Publication Status</label>
+            {{ form.status }}
+          </div>
 
-        <div class="col-md-4">
-          <label class="form-label fw-semibold">Passing Score Override (%)</label>
-          {{ form.passing_score_override }}
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Passing Score Override (%)</label>
+            {{ form.passing_score_override }}
+          </div>
+
+          <div class="col-md-4 d-flex align-items-center">
+            <div class="form-check mt-4">
+              {{ form.assessment_required }}
+              <label class="form-check-label fw-semibold" for="{{ form.assessment_required.id_for_label }}">
+                {{ form.assessment_required.label }}
+              </label>
+              <div class="form-text text-muted small mt-0">
+                Uncheck to allow completion without a quiz.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Publish Gate Alert -->
-      {% if not is_publishable %}
+      {% if topic.assessment_required and not is_publishable %}
       <div class="alert alert-warning mt-3 mb-0 small d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
         <div>
-          <strong>Publish Gate Warning:</strong> This topic currently has <strong>{{ current_question_count }}</strong> questions. It requires at least <strong>{{ required_question_count }}</strong> questions before it can be set to <strong>Published</strong>.
+          <strong>Publish Gate Warning:</strong> This topic currently has <strong>{{ current_question_count }}</strong> question{{ current_question_count|pluralize }}. It requires at least <strong>{{ required_question_count }}</strong> question{{ required_question_count|pluralize }} before it can be set to <strong>Published</strong>.
         </div>
       </div>
       {% endif %}

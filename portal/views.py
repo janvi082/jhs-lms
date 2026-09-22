@@ -236,14 +236,10 @@ def portal_topic_edit(request, topic_id):
         form = TopicForm(request.POST, instance=topic)
         if form.is_valid():
             target_status = form.cleaned_data.get('status')
+            target_assessment_required = form.cleaned_data.get('assessment_required', True)
             # PUBLISH GATE CHECK
-            if target_status == Topic.STATUS_PUBLISHED and not topic.is_assessment_ready():
-                if required_count > 0:
-                    needed = required_count - current_question_count
-                    msg = f"This topic has only {current_question_count} questions. Please add {needed} more before publishing."
-                else:
-                    msg = "This topic has no questions. Please add at least one question before publishing."
-                messages.error(request, msg)
+            if target_status == Topic.STATUS_PUBLISHED and target_assessment_required and not topic.is_assessment_ready():
+                messages.error(request, "Topic was not published.")
                 # Render with modal open, no save
                 videos = topic.videos.all().order_by('order', 'id')
                 resources = topic.resources.all().order_by('order', 'id')

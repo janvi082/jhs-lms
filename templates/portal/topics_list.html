@@ -176,8 +176,23 @@
             {{ form.summary }}
           </div>
 
+          <div class="mb-3">
+            <label class="form-label fw-semibold">{{ form.passing_score_override.label }}</label>
+            {{ form.passing_score_override }}
+          </div>
+
+          <div class="form-check mb-3">
+            {{ form.assessment_required }}
+            <label class="form-check-label fw-semibold" for="{{ form.assessment_required.id_for_label }}">
+              {{ form.assessment_required.label }}
+            </label>
+            <div class="form-text text-muted small">
+              Uncheck to allow completion without a quiz.
+            </div>
+          </div>
+
           <div class="alert alert-info small mb-0">
-            <i class="bi bi-info-circle me-1"></i> Topics are saved as <strong>Draft</strong> initially until you add the required minimum questions.
+            <i class="bi bi-info-circle me-1"></i> Topics are saved as <strong>Draft</strong> initially. If Assessment Required is enabled, the configured minimum questions must be added before publishing.
           </div>
         </div>
         <div class="modal-footer">

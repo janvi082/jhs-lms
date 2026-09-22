@@ -74,6 +74,10 @@ class Topic(models.Model):
         null=True, blank=True,
         help_text="Optional passing score percentage override for this specific topic"
     )
+    assessment_required = models.BooleanField(
+        default=True,
+        help_text="Whether learners must complete an assessment to complete this topic."
+    )
 
     class Meta:
         ordering = ['order', 'name']

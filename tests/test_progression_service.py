@@ -6,7 +6,7 @@ from progress.models import TopicProgress
 from progress.services import (
     is_topic_unlocked,
     get_next_topic,
-    complete_zero_question_topic,
+    complete_non_assessed_topic,
     record_topic_view,
     get_effective_passing_score,
     submit_quiz_attempt,
@@ -104,28 +104,36 @@ class ProgressionServiceTests(TestCase):
         self.assertEqual(tp.best_score, 100)
         self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED) # #12 Lower-scoring retake does not relock
 
-    # 14. Zero-question topic is not completed before visit.
+    # 14. Non-assessed topic is not completed before visit.
     def test_zero_question_not_completed_before_visit(self):
+        self.topic1.assessment_required = False
+        self.topic1.save()
         self.assertFalse(TopicProgress.objects.filter(user=self.user, topic=self.topic1).exists())
         self.assertFalse(is_topic_unlocked(self.user, self.topic2))
 
-    # 15. Visiting an unlocked zero-question topic completes it.
+    # 15. Visiting an unlocked non-assessed topic completes it.
     def test_zero_question_unlocked_visit_completes(self):
-        # T1 is unlocked (first topic) and 0 questions
+        # T1 is unlocked (first topic) and non-assessed
+        self.topic1.assessment_required = False
+        self.topic1.save()
         record_topic_view(self.user, self.topic1)
         tp = TopicProgress.objects.get(user=self.user, topic=self.topic1)
         self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
-        # 17. Completing zero-question unlocks next active
+        # 17. Completing non-assessed unlocks next active
         self.assertTrue(is_topic_unlocked(self.user, self.topic2))
 
-    # 16. Locked zero-question topic is not completed.
+    # 16. Locked non-assessed topic is not completed.
     def test_zero_question_locked_not_completed(self):
+        self.topic2.assessment_required = False
+        self.topic2.save()
         record_topic_view(self.user, self.topic2) # T2 is locked
         tp = TopicProgress.objects.get(user=self.user, topic=self.topic2)
         self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
 
-    # 18. Zero-question completion does not create a quiz attempt.
+    # 18. Non-assessed completion does not create a quiz attempt.
     def test_zero_question_no_quiz_attempt(self):
+        self.topic1.assessment_required = False
+        self.topic1.save()
         record_topic_view(self.user, self.topic1)
         self.assertEqual(QuizAttempt.objects.filter(user=self.user, topic=self.topic1).count(), 0)
 
@@ -153,3 +161,35 @@ class ProgressionServiceTests(TestCase):
         self.topic1.passing_score_override = 90
         self.topic1.save()
         self.assertEqual(get_effective_passing_score(self.topic1), 90)
+
+    # --- NEW FEATURE TESTS (Assessment Required) ---
+
+
+
+    def test_non_assessed_topic_with_questions_completes_on_visit(self):
+        # 10. Non-assessed Topic with questions also completes when learner visits
+        self.topic1.assessment_required = False
+        self.topic1.save()
+        Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        record_topic_view(self.user, self.topic1)
+        tp = TopicProgress.objects.get(user=self.user, topic=self.topic1)
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
+
+    def test_assessed_topic_requires_quiz(self):
+        # 12. Assessed Topic still requires quiz/pass
+        self.topic1.assessment_required = True
+        self.topic1.save()
+        Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        record_topic_view(self.user, self.topic1)
+        tp = TopicProgress.objects.get(user=self.user, topic=self.topic1)
+        self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
+
+    def test_failed_assessed_topic_remains_locked(self):
+        # 13. Failed assessed Topic remains incomplete/locked
+        self.topic1.assessment_required = True
+        self.topic1.save()
+        Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        class FakePostFail:
+            def get(self, key): return 'Wrong'
+        submit_quiz_attempt(self.user, self.topic1, FakePostFail())
+        self.assertFalse(is_topic_unlocked(self.user, self.topic2))

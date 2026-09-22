@@ -17,6 +17,8 @@ def quiz_modal(request, slug, topic_id):
     # Progression lock: deny if topic is locked
     if not is_topic_unlocked(request.user, topic):
         raise PermissionDenied
+    if not topic.assessment_required:
+        return HttpResponseBadRequest("This topic does not require an assessment.")
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
         
@@ -66,6 +68,8 @@ def quiz_result(request, slug, topic_id, attempt_id):
     attempt = get_object_or_404(QuizAttempt, id=attempt_id, user=request.user, topic=topic)
     if not has_topic_access(request.user, topic):
         raise PermissionDenied
+    if not topic.assessment_required:
+        return HttpResponseBadRequest("This topic does not require an assessment.")
     
     responses = list(attempt.responses.select_related('question').prefetch_related('selected_choices', 'question__choices').order_by('id'))
     question_reviews = []
@@ -172,6 +176,8 @@ def quiz_submit(request, topic_id):
     # Progression lock: deny if topic is locked
     if not is_topic_unlocked(request.user, topic):
         raise PermissionDenied
+    if not topic.assessment_required:
+        return HttpResponseBadRequest("This topic does not require an assessment.")
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
         

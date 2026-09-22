@@ -38,9 +38,9 @@ def is_topic_unlocked(user, topic):
         status=TopicProgress.STATUS_COMPLETED
     ).exists()
 
-def complete_zero_question_topic(user, topic):
+def complete_non_assessed_topic(user, topic):
     from access.services import has_subject_access, has_topic_access
-    if topic.questions.count() == 0:
+    if not topic.assessment_required:
         if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
             if is_topic_unlocked(user, topic):
                 progress, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
@@ -70,7 +70,7 @@ def record_topic_view(user, topic):
         progress.last_accessed = timezone.now()
         progress.save(update_fields=['status', 'last_accessed'])
         
-    complete_zero_question_topic(user, topic)
+    complete_non_assessed_topic(user, topic)
     progress.refresh_from_db()
 
     return progress

@@ -21,30 +21,34 @@ class SubjectForm(forms.ModelForm):
 class TopicForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'name', 'summary', 'status', 'passing_score_override']
+        fields = ['subject', 'name', 'summary', 'status', 'passing_score_override', 'assessment_required']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Email Etiquette'}),
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary explaining what the learner will learn...'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
+            'assessment_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
             'status': 'Publication Status',
-            'passing_score_override': 'Passing Score Override (%)'
+            'passing_score_override': 'Passing Score Override (%)',
+            'assessment_required': 'Assessment Required',
         }
 class TopicAddForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'name', 'summary', 'passing_score_override']
+        fields = ['subject', 'name', 'summary', 'passing_score_override', 'assessment_required']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Email Etiquette'}),
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary...'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
+            'assessment_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
             'passing_score_override': 'Passing Score Override (%)',
+            'assessment_required': 'Assessment Required',
         }
 
 
