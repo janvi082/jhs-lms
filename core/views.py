@@ -126,7 +126,7 @@ def topic_detail(request, slug, topic_id):
         })
     
     # Determine next topic (simple progression)
-    next_topic = get_next_topic(topic)
+    next_topic = get_next_topic(request.user, topic)
     
     site_config = SiteConfig.get_solo()
     

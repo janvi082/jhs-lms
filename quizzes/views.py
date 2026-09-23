@@ -145,7 +145,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
     has_gradable = gradable_questions > 0
 
     # Determine next topic (simple progression)
-    next_topic = get_next_topic(topic)
+    next_topic = get_next_topic(request.user, topic)
 
     context = {
         'subject': topic.subject,

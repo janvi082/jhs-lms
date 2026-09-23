@@ -3,20 +3,16 @@
 
 {% block portal_content %}
 <div class="mb-3">
-    <a href="{% url 'portal_learners_list' %}" class="text-decoration-none">&larr; Back to Learners</a>
+    <a href="{% url 'portal_learners_list' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Learners
+    </a>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
     <div>
-        <h2 class="mb-1">Manage Learner Access</h2>
-        <p class="text-muted mb-0">Control what this learner can access in the JHS Learning Portal.</p>
-    </div>
-</div>
-
-<div class="card mb-4 shadow-sm border-0">
-    <div class="card-body">
-        <h5 class="card-title mb-1">{{ learner.get_full_name|default:learner.username }}</h5>
-        <div class="text-muted small">
+        <h2 class="mb-1 fs-4">Manage Learner Access</h2>
+        <div class="text-muted fs-6">
+            <span class="fw-semibold text-dark">{{ learner.get_full_name|default:learner.username }}</span> &bull;
             {% if learner.email %}<span>{{ learner.email }}</span> &bull; {% endif %}
             <span>{{ learner.username }}</span> &bull;
             <span class="{% if learner.is_active %}text-success{% else %}text-danger{% endif %}">
@@ -26,58 +22,26 @@
     </div>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="card text-center shadow-sm border-0 h-100">
-            <div class="card-body py-3">
-                <h6 class="card-title text-muted mb-1">Subjects</h6>
-                <h3 class="mb-0" id="summary-subjects">0</h3>
-            </div>
-        </div>
+<div class="d-flex flex-wrap gap-4 mb-3">
+    <div class="fs-6">
+        <span class="fw-semibold">Allowed</span>
+        <span id="allowed-summary" class="text-muted ms-1">0 Subjects &bull; 0 Topics &bull; 0 Videos &bull; 0 Materials</span>
     </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-center shadow-sm border-0 h-100">
-            <div class="card-body py-3">
-                <h6 class="card-title text-muted mb-1">Topics</h6>
-                <h3 class="mb-0" id="summary-topics">0</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-center shadow-sm border-0 h-100">
-            <div class="card-body py-3">
-                <h6 class="card-title text-muted mb-1">Videos</h6>
-                <h3 class="mb-0" id="summary-videos">0</h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-center shadow-sm border-0 h-100">
-            <div class="card-body py-3">
-                <h6 class="card-title text-muted mb-1">Materials</h6>
-                <h3 class="mb-0" id="summary-materials">0</h3>
-            </div>
-        </div>
+    <div class="fs-6">
+        <span class="fw-semibold">Restricted</span>
+        <span id="restricted-summary" class="text-muted ms-1">0 Subjects &bull; 0 Topics &bull; 0 Videos &bull; 0 Materials</span>
     </div>
 </div>
 
-<div class="alert alert-info shadow-sm border-0 mb-4">
-    <h6 class="alert-heading fw-bold mb-2">How access works</h6>
-    <ul class="mb-0 ps-3 small">
-        <li>Access is <strong>allowed by default</strong>.</li>
-        <li>Restricting a Subject or Topic automatically restricts its descendants.</li>
-        <li>Child restrictions can exist independently of their parents.</li>
-        <li class="mt-2 list-unstyled ms-n3">
-            <strong>Visual states:</strong> 
-            <span class="badge bg-success ms-1"><i class="bi bi-check-circle"></i> Allowed</span>
-            <span class="badge bg-danger ms-1"><i class="bi bi-x-circle"></i> Restricted</span>
-            <span class="badge bg-secondary ms-1"><i class="bi bi-lock-fill"></i> Inherited</span>
-        </li>
-    </ul>
+<div class="d-flex align-items-center mb-3 small text-muted">
+    <span>Access is allowed by default. Restrictions override access and cascade to descendants.</span>
+    <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-decoration-none" data-bs-toggle="modal" data-bs-target="#accessRulesModal">
+        Access rules
+    </button>
 </div>
 
 <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-white d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 py-3">
+    <div class="card-header bg-white d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 py-2">
         <div class="d-flex align-items-center gap-2 flex-grow-1">
             <input type="text" id="access-search" class="form-control form-control-sm w-100" placeholder="Search content..." style="max-width: 300px;">
         </div>
@@ -106,47 +70,47 @@
             
             <div class="hierarchy-root list-group list-group-flush" id="hierarchy-container">
             {% for subject in hierarchy %}
-                <div class="list-group-item subject-container py-3" data-hierarchy-level="subject" data-search-text="{{ subject.name|lower }}">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="list-group-item subject-container py-2" data-hierarchy-level="subject" data-search-text="{{ subject.name|lower }}">
+                    <div class="d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
-                            <button class="btn btn-sm btn-light border p-1 d-flex align-items-center justify-content-center toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#subject-collapse-{{ subject.id }}" aria-expanded="true" aria-controls="subject-collapse-{{ subject.id }}" style="width: 28px; height: 28px;">
-                                <i class="bi bi-chevron-down"></i>
+                            <button class="btn btn-sm btn-light border p-0 d-flex align-items-center justify-content-center toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#subject-collapse-{{ subject.id }}" aria-expanded="true" aria-controls="subject-collapse-{{ subject.id }}" style="width: 24px; height: 24px;">
+                                <i class="bi bi-chevron-down" style="font-size: 0.8rem;"></i>
                             </button>
                             <div class="form-check mb-0">
                                 <input type="checkbox" class="form-check-input access-checkbox" id="chk-subj-{{ subject.id }}" data-type="subject" data-id="{{ subject.id }}" data-explicit="{{ subject.explicit_denied|yesno:'true,false' }}" {% if subject.allowed %}checked{% endif %} {% if not subject.allowed and not subject.explicit_denied %}disabled{% endif %}>
-                                <label class="form-check-label fw-bold" for="chk-subj-{{ subject.id }}">{{ subject.name }}</label>
+                                <label class="form-check-label fw-semibold" for="chk-subj-{{ subject.id }}" style="font-size: 15px;">{{ subject.name }}</label>
                             </div>
                         </div>
                         <div class="access-badge-container ms-2 text-nowrap"></div>
                     </div>
                     
-                    <div class="collapse show ms-4 ps-2 border-start" id="subject-collapse-{{ subject.id }}">
+                    <div class="collapse show ms-3 ps-2 border-start mt-1" id="subject-collapse-{{ subject.id }}">
                         <div class="list-group list-group-flush">
                         {% for topic in subject.children %}
-                            <div class="list-group-item topic-container py-2 border-0 px-0" data-hierarchy-level="topic" data-search-text="{{ topic.name|lower }}">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div class="list-group-item topic-container py-1 border-0 px-0" data-hierarchy-level="topic" data-search-text="{{ topic.name|lower }}">
+                                <div class="d-flex justify-content-between align-items-center">
                                     <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
-                                        <button class="btn btn-sm btn-light border p-0 d-flex align-items-center justify-content-center toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#topic-collapse-{{ topic.id }}" aria-expanded="false" aria-controls="topic-collapse-{{ topic.id }}" style="width: 24px; height: 24px;">
-                                            <i class="bi bi-chevron-down"></i>
+                                        <button class="btn btn-sm btn-light border p-0 d-flex align-items-center justify-content-center toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#topic-collapse-{{ topic.id }}" aria-expanded="false" aria-controls="topic-collapse-{{ topic.id }}" style="width: 20px; height: 20px;">
+                                            <i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i>
                                         </button>
                                         <div class="form-check mb-0">
                                             <input type="checkbox" class="form-check-input access-checkbox" id="chk-top-{{ topic.id }}" data-type="topic" data-id="{{ topic.id }}" data-explicit="{{ topic.explicit_denied|yesno:'true,false' }}" {% if topic.allowed %}checked{% endif %} {% if not topic.allowed and not topic.explicit_denied %}disabled{% endif %}>
-                                            <label class="form-check-label fw-semibold" for="chk-top-{{ topic.id }}">{{ topic.name }}</label>
+                                            <label class="form-check-label fw-normal" for="chk-top-{{ topic.id }}" style="font-size: 14px;">{{ topic.name }}</label>
                                         </div>
                                     </div>
                                     <div class="access-badge-container ms-2 text-nowrap"></div>
                                 </div>
                                 
-                                <div class="collapse ms-4 ps-2 border-start" id="topic-collapse-{{ topic.id }}">
+                                <div class="collapse ms-3 ps-2 border-start mt-1" id="topic-collapse-{{ topic.id }}">
                                     <div class="list-group list-group-flush">
                                     {% for item in topic.children %}
                                         <div class="list-group-item content-container py-1 border-0 px-0" data-hierarchy-level="content" data-search-text="{{ item.name|lower }}">
                                             <div class="d-flex justify-content-between align-items-center">
                                                 <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
-                                                    <i class="bi {% if item.type == 'video' %}bi-play-circle text-primary{% else %}bi-file-earmark-text text-secondary{% endif %}"></i>
+                                                    <i class="bi {% if item.type == 'video' %}bi-play-circle text-primary{% else %}bi-file-earmark-text text-secondary{% endif %} small"></i>
                                                     <div class="form-check mb-0">
                                                         <input type="checkbox" class="form-check-input access-checkbox" id="chk-item-{{ item.type }}-{{ item.id }}" data-type="{{ item.type }}" data-id="{{ item.id }}" data-explicit="{{ item.explicit_denied|yesno:'true,false' }}" {% if item.allowed %}checked{% endif %} {% if not item.allowed and not item.explicit_denied %}disabled{% endif %}>
-                                                        <label class="form-check-label" for="chk-item-{{ item.type }}-{{ item.id }}" style="word-wrap: break-word; white-space: normal;">{{ item.name }}</label>
+                                                        <label class="form-check-label fw-normal" for="chk-item-{{ item.type }}-{{ item.id }}" style="font-size: 14px; word-wrap: break-word; white-space: normal;">{{ item.name }}</label>
                                                     </div>
                                                 </div>
                                                 <div class="access-badge-container ms-2 text-nowrap"></div>
@@ -175,6 +139,31 @@
                 </div>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Access Rules Modal -->
+<div class="modal fade" id="accessRulesModal" tabindex="-1" aria-labelledby="accessRulesModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="accessRulesModalLabel">How access works</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body small">
+                <ul class="mb-0 ps-3">
+                    <li>Access is <strong>allowed by default</strong>.</li>
+                    <li>Restricting a Subject or Topic automatically restricts its descendants.</li>
+                    <li>Child restrictions can exist independently of their parents.</li>
+                    <li class="mt-2 list-unstyled ms-n3">
+                        <strong>Visual states:</strong> 
+                        <span class="badge bg-success ms-1"><i class="bi bi-check-circle"></i> Allowed</span>
+                        <span class="badge bg-danger ms-1"><i class="bi bi-x-circle"></i> Restricted</span>
+                        <span class="badge bg-secondary ms-1"><i class="bi bi-lock-fill"></i> Inherited</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
 

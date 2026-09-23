@@ -7,27 +7,43 @@ from .models import TopicProgress
 def get_effective_passing_score(topic):
     return topic.effective_passing_score
 
-def get_next_topic(topic):
-    return Topic.objects.filter(
-        subject=topic.subject,
-        is_active=True
-    ).filter(
-        Q(order__gt=topic.order) | Q(order=topic.order, id__gt=topic.id)
-    ).order_by('order', 'id').first()
+def _get_effective_progression_sequence(user, subject):
+    from access.services import has_topic_access
+    active_topics = list(Topic.objects.filter(subject=subject, is_active=True).order_by('order', 'id'))
+    return [t for t in active_topics if has_topic_access(user, t)]
+
+def get_next_topic(user, topic):
+    effective_topics = _get_effective_progression_sequence(user, topic.subject)
+    for i, t in enumerate(effective_topics):
+        if t.id == topic.id:
+            if i + 1 < len(effective_topics):
+                return effective_topics[i + 1]
+            return None
+    return None
 
 def is_topic_unlocked(user, topic):
+    from access.services import has_topic_access
+    if not has_topic_access(user, topic):
+        return False
+
     if getattr(user, 'is_admin_user', False):
         return True
 
-    if TopicProgress.objects.filter(user=user, topic=topic, status=TopicProgress.STATUS_COMPLETED).exists():
+    if TopicProgress.objects.filter(
+        user=user, 
+        topic=topic, 
+        status__in=[TopicProgress.STATUS_COMPLETED, TopicProgress.STATUS_IN_PROGRESS]
+    ).exists():
         return True
 
-    previous_topic = Topic.objects.filter(
-        subject=topic.subject,
-        is_active=True
-    ).filter(
-        Q(order__lt=topic.order) | Q(order=topic.order, id__lt=topic.id)
-    ).order_by('-order', '-id').first()
+    effective_topics = _get_effective_progression_sequence(user, topic.subject)
+    
+    previous_topic = None
+    for i, t in enumerate(effective_topics):
+        if t.id == topic.id:
+            if i > 0:
+                previous_topic = effective_topics[i - 1]
+            break
 
     if not previous_topic:
         return True
@@ -58,6 +74,9 @@ def record_topic_view(user, topic):
     if not user.is_authenticated or not user.is_learner:
         return None
         
+    if not is_topic_unlocked(user, topic):
+        return TopicProgress.objects.filter(user=user, topic=topic).first()
+
     progress, created = TopicProgress.objects.get_or_create(
         user=user,
         topic=topic,

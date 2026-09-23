@@ -11,9 +11,9 @@ document.addEventListener('DOMContentLoaded', function () {
     
     let isDirty = false;
 
-    const BADGE_ALLOWED = '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Allowed</span>';
-    const BADGE_RESTRICTED = '<span class="badge bg-danger"><i class="bi bi-x-circle"></i> Restricted</span>';
-    const BADGE_INHERITED = '<span class="badge bg-secondary"><i class="bi bi-lock-fill"></i> Inherited</span>';
+    const BADGE_ALLOWED = '<span class="text-success small fw-semibold"><i class="bi bi-check-circle"></i> Allowed</span>';
+    const BADGE_RESTRICTED = '<span class="text-danger small fw-semibold"><i class="bi bi-x-circle"></i> Restricted</span>';
+    const BADGE_INHERITED = '<span class="text-secondary small fw-semibold"><i class="bi bi-lock-fill"></i> Inherited</span>';
 
     function setDirty() {
         if (!isDirty) {
@@ -78,18 +78,28 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function initCounts() {
-        let subjectCount = 0, topicCount = 0, videoCount = 0, resourceCount = 0;
+        let allowed = { subject: 0, topic: 0, video: 0, resource: 0 };
+        let restricted = { subject: 0, topic: 0, video: 0, resource: 0 };
+        
         checkboxes.forEach(cb => {
             const type = cb.dataset.type;
-            if (type === 'subject') subjectCount++;
-            else if (type === 'topic') topicCount++;
-            else if (type === 'video') videoCount++;
-            else if (type === 'resource') resourceCount++;
+            if (cb.checked === true) {
+                if (allowed[type] !== undefined) allowed[type]++;
+            } else if (cb.checked === false && cb.disabled === false) {
+                if (restricted[type] !== undefined) restricted[type]++;
+            }
+            // Inherited items (cb.disabled === true) are not counted in either summary.
         });
-        if (document.getElementById('summary-subjects')) document.getElementById('summary-subjects').textContent = subjectCount;
-        if (document.getElementById('summary-topics')) document.getElementById('summary-topics').textContent = topicCount;
-        if (document.getElementById('summary-videos')) document.getElementById('summary-videos').textContent = videoCount;
-        if (document.getElementById('summary-materials')) document.getElementById('summary-materials').textContent = resourceCount;
+        
+        const allowedSummary = document.getElementById('allowed-summary');
+        if (allowedSummary) {
+            allowedSummary.innerHTML = `${allowed.subject} Subjects &bull; ${allowed.topic} Topics &bull; ${allowed.video} Videos &bull; ${allowed.resource} Materials`;
+        }
+        
+        const restrictedSummary = document.getElementById('restricted-summary');
+        if (restrictedSummary) {
+            restrictedSummary.innerHTML = `${restricted.subject} Subjects &bull; ${restricted.topic} Topics &bull; ${restricted.video} Videos &bull; ${restricted.resource} Materials`;
+        }
     }
 
     checkboxes.forEach(cb => {
@@ -101,6 +111,7 @@ document.addEventListener('DOMContentLoaded', function () {
             updateBadge(cb);
             updateChildren(cb);
             setDirty();
+            initCounts();
         });
     });
 
