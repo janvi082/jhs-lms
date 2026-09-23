@@ -113,50 +113,64 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
+        <colgroup>
+          <col style="width: 80px;">
+          <col>
+          <col style="width: 120px;">
+          <col>
+          <col style="width: 90px;">
+          <col style="width: 120px;">
+        </colgroup>
         <thead class="table-light">
           <tr>
-            <th class="ps-4">Order</th>
-            <th>Material Title</th>
-            <th>Type</th>
-            <th>Subject / Topic</th>
-            <th>URL Link</th>
-            <th class="text-end pe-4">Action</th>
+            <th class="text-center px-3">Order</th>
+            <th class="px-3">Material Title</th>
+            <th class="text-center px-3">Type</th>
+            <th class="px-3">Subject / Topic</th>
+            <th class="text-center px-2 text-nowrap">URL Link</th>
+            <th class="px-2">
+              <div class="text-center" style="width: 64px;">Action</div>
+            </th>
           </tr>
         </thead>
         <tbody id="materialsTbody">
           {% for m in materials %}
           <tr class="{% if selected_topic %}material-row{% endif %}" data-material-id="{{ m.id }}">
-            <td class="ps-4" style="width: 80px;">
+            <td class="text-center px-3">
               {% if selected_topic %}
               <i class="bi bi-grip-vertical text-secondary drag-handle fs-5 me-1"></i>
               {% endif %}
-              <span class="fw-bold text-muted display-order">{{ m.order }}</span>
+              <span class="text-muted display-order">{{ m.order }}</span>
             </td>
-            <td>
-              <div class="fw-bold text-dark">{{ m.title }}</div>
+            <td class="px-3">
+              <div class="fw-semibold text-dark"><i class="bi bi-file-earmark-text me-1 text-secondary"></i> {{ m.title }}</div>
               {% if m.description %}<div class="text-muted small">{{ m.description }}</div>{% endif %}
             </td>
-            <td>
-              <span class="badge bg-light text-dark border">{{ m.get_resource_type_display }}</span>
+            <td class="text-center px-3">
+              <span class="badge bg-light text-dark border fw-normal">{{ m.get_resource_type_display }}</span>
             </td>
-            <td>
-              <span class="badge bg-light text-dark border">{{ m.topic.subject.name }}</span>
+            <td class="px-3">
+              <span class="badge bg-light text-dark border fw-normal">{{ m.topic.subject.name }}</span>
               <span class="text-muted small">&rarr; {{ m.topic.name }}</span>
             </td>
-            <td>
-              <a href="{{ m.url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-box-arrow-up-right me-1"></i> Open URL
+            <td class="text-center px-2">
+              <a href="{{ m.url }}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Open URL" aria-label="Open URL" style="width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+                <i class="bi bi-box-arrow-up-right"></i>
               </a>
             </td>
-            <td class="text-end pe-4">
-              <div class="d-inline-flex align-items-center gap-3 justify-content-end">
-                <a href="{% url 'portal_topic_edit' m.topic.id %}" class="btn btn-sm btn-outline-primary">
-                  Edit Material Content
-                </a>
+            <td class="px-2">
+              <div class="d-flex align-items-center">
+                <div class="text-center" style="width: 64px;">
+                  <a href="{% url 'portal_topic_edit' m.topic.id %}" class="btn btn-sm btn-outline-primary" title="Edit Material Content" aria-label="Edit Material Content" style="width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+                    <i class="bi bi-pencil-square"></i>
+                  </a>
+                </div>
                 {% if selected_topic %}
-                <div class="btn-group btn-group-sm shadow-sm" role="group">
-                  <button type="button" class="btn btn-light border p-0 px-2 move-up-btn" title="Move Up"><i class="bi bi-chevron-up" style="font-size: 0.7rem;"></i></button>
-                  <button type="button" class="btn btn-light border p-0 px-2 move-down-btn" title="Move Down"><i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i></button>
+                <div class="ms-2">
+                  <div class="btn-group-vertical btn-group-sm shadow-sm" role="group">
+                    <button type="button" class="btn btn-light border p-0 px-2 move-up-btn" title="Move Up"><i class="bi bi-chevron-up" style="font-size: 0.7rem;"></i></button>
+                    <button type="button" class="btn btn-light border p-0 px-2 move-down-btn" title="Move Down"><i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i></button>
+                  </div>
                 </div>
                 {% endif %}
               </div>

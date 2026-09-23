@@ -14,10 +14,10 @@
 
     <nav class="nav flex-column">
       <div class="nav-header">Content</div>
-      <a class="nav-link {% if 'subjects' in request.path %}active{% endif %}" href="{% url 'portal_subjects_list' %}">
+      <a class="nav-link {% if 'subjects' in request.path and 'topics' not in request.path %}active{% endif %}" href="{% url 'portal_subjects_list' %}">
         <i class="bi bi-book"></i> Subjects
       </a>
-      <a class="nav-link {% if 'topics' in request.path %}active{% endif %}" href="{% url 'portal_topics_list' %}">
+      <a class="nav-link {% if 'topics' in request.path and 'questions' not in request.path %}active{% endif %}" href="{% url 'portal_topics_list' %}">
         <i class="bi bi-journal-text"></i> Topics
       </a>
       <a class="nav-link {% if 'videos' in request.path %}active{% endif %}" href="{% url 'portal_videos_overview' %}">
@@ -26,16 +26,16 @@
       <a class="nav-link {% if 'materials' in request.path %}active{% endif %}" href="{% url 'portal_materials_overview' %}">
         <i class="bi bi-folder2-open"></i> Materials
       </a>
-      <a class="nav-link {% if 'quizzes' in request.path or 'questions' in request.path %}active{% endif %}" href="{% url 'portal_quizzes_overview' %}">
+      <a class="nav-link {% if 'quizzes' in request.path or 'question' in request.path %}active{% endif %}" href="{% url 'portal_quizzes_overview' %}">
         <i class="bi bi-patch-question"></i> Quizzes
       </a>
 
 
       <div class="nav-header">Learners</div>
-      <a class="nav-link {% if 'learners' in request.path and 'progress' not in request.path %}active{% endif %}" href="{% url 'portal_learners_list' %}">
+      <a class="nav-link {% if 'learners' in request.path and request.resolver_match.url_name != 'portal_learner_progress_detail' %}active{% endif %}" href="{% url 'portal_learners_list' %}">
         <i class="bi bi-people"></i> Learners
       </a>
-      <a class="nav-link {% if 'progress' in request.path or 'learners/' in request.path and request.resolver_match.url_name == 'portal_learner_progress_detail' %}active{% endif %}" href="{% url 'portal_progress' %}">
+      <a class="nav-link {% if 'progress' in request.path or request.resolver_match.url_name == 'portal_learner_progress_detail' %}active{% endif %}" href="{% url 'portal_progress' %}">
         <i class="bi bi-graph-up-arrow"></i> Progress
       </a>
 

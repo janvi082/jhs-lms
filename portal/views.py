@@ -29,6 +29,7 @@ from .forms import (
     QuestionForm,
     LearnerForm,
     LearnerPasswordResetForm,
+    LearnerEditForm,
     SiteConfigForm,
     LearnerAccessForm,
 )
@@ -1002,6 +1003,20 @@ def admin_attempt_review(request, attempt_id, response_id):
 @admin_required
 def portal_learners_list(request):
     learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
+    learners_data = [{'learner': l} for l in learners]
+        
+    form = LearnerForm()
+    empty_reset_form = LearnerPasswordResetForm()
+    context = {
+        'learners_data': learners_data,
+        'form': form,
+        'empty_reset_form': empty_reset_form,
+    }
+    return render(request, 'portal/learners_list.html', context)
+
+@admin_required
+def portal_progress_list(request):
+    learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
     learners_data = []
     
     for l in learners:
@@ -1011,12 +1026,10 @@ def portal_learners_list(request):
             'overall_progress': prog,
         })
         
-    form = LearnerForm()
     context = {
         'learners_data': learners_data,
-        'form': form,
     }
-    return render(request, 'portal/learners_list.html', context)
+    return render(request, 'portal/progress_list.html', context)
 
 @admin_required
 def portal_learner_add(request):
@@ -1035,6 +1048,42 @@ def portal_learner_add(request):
     return redirect('portal_learners_list')
 
 @admin_required
+def portal_learner_edit(request, learner_id):
+    learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
+    if request.method == 'POST':
+        form = LearnerEditForm(request.POST, instance=learner)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Learner details for @{learner.username} updated successfully.")
+            return redirect('portal_learners_list')
+        
+        # Validation failure
+        learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
+        learners_data = [{'learner': l} for l in learners]
+        context = {
+            'learners_data': learners_data,
+            'form': LearnerForm(),  # Add form
+            'empty_reset_form': LearnerPasswordResetForm(),
+            'edit_form': form,
+            'edit_learner': learner,
+            'show_modal': f'learner_edit'
+        }
+        return render(request, 'portal/learners_list.html', context)
+    else:
+        learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
+        learners_data = [{'learner': l} for l in learners]
+        form = LearnerEditForm(instance=learner)
+        context = {
+            'learners_data': learners_data,
+            'form': LearnerForm(),
+            'empty_reset_form': LearnerPasswordResetForm(),
+            'edit_form': form,
+            'edit_learner': learner,
+            'show_modal': f'learner_edit'
+        }
+        return render(request, 'portal/learners_list.html', context)
+
+@admin_required
 def portal_learner_toggle_status(request, learner_id):
     learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
     if request.method == 'POST':
@@ -1047,10 +1096,7 @@ def portal_learner_toggle_status(request, learner_id):
 @admin_required
 def portal_learner_reset_password(request, learner_id):
     learner = get_object_or_404(User, id=learner_id, role=User.ROLE_LEARNER)
-    if request.method == 'GET':
-        form = LearnerPasswordResetForm(user=learner)
-        return TemplateResponse(request, 'portal/learner_reset_password.html', {'form': form, 'learner': learner})
-    elif request.method == 'POST':
+    if request.method == 'POST':
         form = LearnerPasswordResetForm(request.POST, user=learner)
         if form.is_valid():
             new_password = form.cleaned_data['new_password']
@@ -1058,10 +1104,33 @@ def portal_learner_reset_password(request, learner_id):
             learner.save()
             messages.success(request, f"Password reset successfully for @{learner.username}.")
             return redirect('portal_learners_list')
-        # If invalid, re-render form with errors
-        return render(request, 'portal/learner_reset_password.html', {'form': form, 'learner': learner})
+        
+        # Validation failure
+        learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
+        learners_data = [{'learner': l} for l in learners]
+        context = {
+            'learners_data': learners_data,
+            'form': LearnerForm(),
+            'empty_reset_form': LearnerPasswordResetForm(),
+            'reset_form': form,
+            'reset_learner': learner,
+            'show_modal': 'resetPasswordModal'
+        }
+        return render(request, 'portal/learners_list.html', context)
     else:
-        return redirect('portal_learners_list')
+        # GET request
+        learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
+        learners_data = [{'learner': l} for l in learners]
+        form = LearnerPasswordResetForm(user=learner)
+        context = {
+            'learners_data': learners_data,
+            'form': LearnerForm(),
+            'empty_reset_form': LearnerPasswordResetForm(),
+            'reset_form': form,
+            'reset_learner': learner,
+            'show_modal': 'resetPasswordModal'
+        }
+        return render(request, 'portal/learners_list.html', context)
 
 # --- LEARNER PROGRESS DRILL-DOWN ---
 

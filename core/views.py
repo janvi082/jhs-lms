@@ -15,7 +15,7 @@ from progress.services import (
     is_topic_unlocked,
     get_next_topic,
 )
-from access.services import has_subject_access, has_topic_access
+from access.services import has_subject_access, has_topic_access, has_video_access, has_resource_access
 @login_required
 def learner_dashboard(request):
     user = request.user
@@ -101,8 +101,12 @@ def topic_detail(request, slug, topic_id):
     progress = record_topic_view(request.user, topic)
     display_status = get_topic_display_status(progress)
 
-    videos = list(topic.videos.all())
-    resources = list(topic.resources.all())
+    if request.user.is_admin_user:
+        videos = list(topic.videos.all())
+        resources = list(topic.resources.all())
+    else:
+        videos = [v for v in topic.videos.all() if has_video_access(request.user, v)]
+        resources = [r for r in topic.resources.all() if has_resource_access(request.user, r)]
     # Prepare attempt data with review-aware display
 
     attempts_qs = QuizAttempt.objects.filter(user=request.user, topic=topic).order_by('-created_at')

@@ -25,14 +25,16 @@ def _is_allowed(user, obj) -> bool:
     """
     if getattr(user, "is_admin_user", False):
         return True
-    ct = ContentType.objects.get_for_model(obj)
-    try:
-        entry = LearnerAccess.objects.get(
-            learner=user, content_type=ct, object_id=obj.pk
+        
+    if not hasattr(user, '_learner_access_cache'):
+        # Preload all explicit denies for this learner to prevent N+1 queries
+        denies = LearnerAccess.objects.filter(learner=user, is_allowed=False)
+        user._learner_access_cache = set(
+            (ct_id, obj_id) for ct_id, obj_id in denies.values_list('content_type_id', 'object_id')
         )
-        return entry.is_allowed
-    except LearnerAccess.DoesNotExist:
-        return True
+        
+    ct_id = ContentType.objects.get_for_model(obj).id
+    return (ct_id, obj.pk) not in user._learner_access_cache
 
 
 def has_subject_access(user, subject: Subject) -> bool:

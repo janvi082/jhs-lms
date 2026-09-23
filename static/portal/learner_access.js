@@ -4,43 +4,216 @@ document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('learner-access-form');
     const hiddenInput = document.querySelector('input[name="access_data"]');
     const checkboxes = document.querySelectorAll('.access-checkbox');
+    const searchInput = document.getElementById('access-search');
+    const filterRadios = document.querySelectorAll('input[name="accessFilter"]');
+    const btnExpandAll = document.getElementById('btn-expand-all');
+    const btnCollapseAll = document.getElementById('btn-collapse-all');
+    
+    let isDirty = false;
 
-    function updateChildren(parent) {
-        const li = parent.closest('li');
-        if (!li) return;
-        const childChecks = li.querySelectorAll('.access-checkbox');
-        childChecks.forEach(cb => {
-            if (cb === parent) return;
-            if (!parent.checked) { // parent explicitly denied
-                cb.disabled = true;
-                cb.checked = true; // show inherited deny as checked
-                cb.dataset.inherited = 'true';
-            } else { // parent allowed
-                if (cb.dataset.inherited === 'true') {
-                    // Restore explicit state
-                    cb.disabled = false;
-                    const explicit = cb.dataset.explicit === 'true';
-                    cb.checked = !explicit; // allowed if not explicitly denied
-                    delete cb.dataset.inherited;
-                }
-            }
+    const BADGE_ALLOWED = '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Allowed</span>';
+    const BADGE_RESTRICTED = '<span class="badge bg-danger"><i class="bi bi-x-circle"></i> Restricted</span>';
+    const BADGE_INHERITED = '<span class="badge bg-secondary"><i class="bi bi-lock-fill"></i> Inherited</span>';
+
+    function setDirty() {
+        if (!isDirty) {
+            isDirty = true;
+            document.getElementById('unsaved-indicator').style.visibility = 'visible';
+            document.getElementById('btn-cancel').disabled = false;
+            document.getElementById('btn-save').disabled = false;
+        }
+    }
+
+    if (document.getElementById('btn-cancel')) {
+        document.getElementById('btn-cancel').addEventListener('click', function() {
+            window.location.reload();
         });
     }
 
+    function updateBadge(cb) {
+        const container = cb.closest('[data-hierarchy-level]');
+        if (!container) return;
+        const badgeContainer = container.querySelector('.access-badge-container');
+        if (!badgeContainer) return;
+        
+        if (cb.disabled) {
+            badgeContainer.innerHTML = BADGE_INHERITED;
+        } else if (cb.checked) {
+            badgeContainer.innerHTML = BADGE_ALLOWED;
+        } else {
+            badgeContainer.innerHTML = BADGE_RESTRICTED;
+        }
+    }
+
+    function updateChildren(parentCb) {
+        const parentLevel = parentCb.dataset.type; 
+        let containerClass = '';
+        if (parentLevel === 'subject') containerClass = '.subject-container';
+        else if (parentLevel === 'topic') containerClass = '.topic-container';
+        
+        if (!containerClass) return; 
+        
+        const container = parentCb.closest(containerClass);
+        if (!container) return;
+
+        const childChecks = container.querySelectorAll('.access-checkbox');
+        
+        childChecks.forEach(cb => {
+            if (cb === parentCb) return;
+            
+            if (!parentCb.checked) { 
+                cb.disabled = true;
+                cb.checked = false; 
+                cb.dataset.inherited = 'true';
+            } else { 
+                if (cb.dataset.inherited === 'true') {
+                    cb.disabled = false;
+                    const explicit = cb.dataset.explicit === 'true';
+                    cb.checked = !explicit;
+                    delete cb.dataset.inherited;
+                }
+            }
+            updateBadge(cb);
+        });
+    }
+
+    function initCounts() {
+        let subjectCount = 0, topicCount = 0, videoCount = 0, resourceCount = 0;
+        checkboxes.forEach(cb => {
+            const type = cb.dataset.type;
+            if (type === 'subject') subjectCount++;
+            else if (type === 'topic') topicCount++;
+            else if (type === 'video') videoCount++;
+            else if (type === 'resource') resourceCount++;
+        });
+        if (document.getElementById('summary-subjects')) document.getElementById('summary-subjects').textContent = subjectCount;
+        if (document.getElementById('summary-topics')) document.getElementById('summary-topics').textContent = topicCount;
+        if (document.getElementById('summary-videos')) document.getElementById('summary-videos').textContent = videoCount;
+        if (document.getElementById('summary-materials')) document.getElementById('summary-materials').textContent = resourceCount;
+    }
+
     checkboxes.forEach(cb => {
+        updateBadge(cb);
         cb.addEventListener('change', function () {
+            if (!cb.disabled) {
+                cb.dataset.explicit = (!cb.checked).toString();
+            }
+            updateBadge(cb);
             updateChildren(cb);
+            setDirty();
         });
     });
 
-    form.addEventListener('submit', function (e) {
-        const denied = [];
-        checkboxes.forEach(cb => {
-            // explicit deny: unchecked and not disabled (i.e., not inherited)
-            if (!cb.checked && !cb.disabled) {
-                denied.push({ type: cb.dataset.type, id: parseInt(cb.dataset.id, 10) });
+    initCounts();
+
+    function applySearchAndFilter() {
+        if (!searchInput) return;
+        const query = searchInput.value.toLowerCase().trim();
+        const filterState = document.querySelector('input[name="accessFilter"]:checked').value;
+        
+        const subjects = document.querySelectorAll('.subject-container');
+        
+        subjects.forEach(subjectEl => {
+            let subjectVisible = false;
+            const subjectText = subjectEl.dataset.searchText;
+            const subjectCb = subjectEl.querySelector('.access-checkbox[data-type="subject"]');
+            const subjectMatchesFilter = matchesFilter(subjectCb, filterState);
+            const subjectMatchesSearch = query === '' || subjectText.includes(query);
+            
+            const topics = subjectEl.querySelectorAll('.topic-container');
+            
+            topics.forEach(topicEl => {
+                let topicVisible = false;
+                const topicText = topicEl.dataset.searchText;
+                const topicCb = topicEl.querySelector('.access-checkbox[data-type="topic"]');
+                const topicMatchesFilter = matchesFilter(topicCb, filterState);
+                const topicMatchesSearch = query === '' || topicText.includes(query);
+                
+                const items = topicEl.querySelectorAll('.content-container');
+                
+                items.forEach(itemEl => {
+                    const itemText = itemEl.dataset.searchText;
+                    const itemCb = itemEl.querySelector('.access-checkbox[data-type="video"], .access-checkbox[data-type="resource"]');
+                    const itemMatchesFilter = matchesFilter(itemCb, filterState);
+                    const itemMatchesSearch = query === '' || itemText.includes(query);
+                    
+                    const itemVisible = itemMatchesFilter && (itemMatchesSearch || (query !== '' && (topicMatchesSearch || subjectMatchesSearch)));
+                    itemEl.style.display = itemVisible ? '' : 'none';
+                    
+                    if (itemVisible) {
+                        topicVisible = true;
+                    }
+                });
+                
+                const selfVisible = topicMatchesFilter && (topicMatchesSearch || subjectMatchesSearch);
+                topicVisible = topicVisible || selfVisible;
+                topicEl.style.display = topicVisible ? '' : 'none';
+                
+                if (topicVisible) {
+                    subjectVisible = true;
+                }
+            });
+            
+            const selfVisible = subjectMatchesFilter && subjectMatchesSearch;
+            subjectVisible = subjectVisible || selfVisible;
+            subjectEl.style.display = subjectVisible ? '' : 'none';
+        });
+    }
+
+    function matchesFilter(cb, filterState) {
+        if (!cb) return false;
+        if (filterState === 'all') return true;
+        if (filterState === 'allowed') {
+            return cb.checked && !cb.disabled;
+        }
+        if (filterState === 'restricted') {
+            return !cb.checked || cb.disabled;
+        }
+        return true;
+    }
+
+    if(searchInput) searchInput.addEventListener('input', applySearchAndFilter);
+    filterRadios.forEach(radio => radio.addEventListener('change', applySearchAndFilter));
+
+    if (btnExpandAll) {
+        btnExpandAll.addEventListener('click', function() {
+            document.querySelectorAll('.collapse').forEach(collapseEl => {
+                if(typeof bootstrap !== 'undefined') {
+                    const bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl, {toggle: false});
+                    bsCollapse.show();
+                } else {
+                    collapseEl.classList.add('show');
+                }
+            });
+            document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(btn => btn.setAttribute('aria-expanded', 'true'));
+        });
+    }
+
+    if (btnCollapseAll) {
+        btnCollapseAll.addEventListener('click', function() {
+            document.querySelectorAll('.collapse').forEach(collapseEl => {
+                if(typeof bootstrap !== 'undefined') {
+                    const bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl, {toggle: false});
+                    bsCollapse.hide();
+                } else {
+                    collapseEl.classList.remove('show');
+                }
+            });
+            document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
+        });
+    }
+
+    if (form) {
+        form.addEventListener('submit', function (e) {
+            const denied = [];
+            checkboxes.forEach(cb => {
+                if ((!cb.checked && !cb.disabled) || cb.dataset.explicit === 'true') {
+                    denied.push({ type: cb.dataset.type, id: parseInt(cb.dataset.id, 10) });
+                }
+            });
+            if (hiddenInput) {
+                hiddenInput.value = JSON.stringify(denied);
             }
         });
-        hiddenInput.value = JSON.stringify(denied);
-    });
+    }
 });

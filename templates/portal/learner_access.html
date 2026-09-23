@@ -2,53 +2,181 @@
 {% load static %}
 
 {% block portal_content %}
-<h2>Access Control for Learner: {{ learner.username }}</h2>
-<form id="learner-access-form" method="post" action="{% url 'portal_learner_access_save' learner_id=learner.id %}">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <ul class="list-unstyled">
-{% for subject in hierarchy %}
-<li>
-    <div class="form-check">
-        <input type="checkbox" class="form-check-input access-checkbox" data-type="subject" data-id="{{ subject.id }}" data-explicit="{{ subject.explicit_denied|yesno:'true,false' }}" {% if subject.allowed %}checked{% endif %} {% if not subject.allowed and not subject.explicit_denied %}disabled{% endif %}>
-        <label class="form-check-label">Subject: {{ subject.name }}{% if subject.explicit_denied %} (Denied){% endif %}</label>
+<div class="mb-3">
+    <a href="{% url 'portal_learners_list' %}" class="text-decoration-none">&larr; Back to Learners</a>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Manage Learner Access</h2>
+        <p class="text-muted mb-0">Control what this learner can access in the JHS Learning Portal.</p>
     </div>
-    <ul style="margin-left:20px;">
-        {% for topic in subject.children %}
-        <li>
-            <div class="form-check">
-                <input type="checkbox" class="form-check-input access-checkbox" data-type="topic" data-id="{{ topic.id }}" data-explicit="{{ topic.explicit_denied|yesno:'true,false' }}" {% if topic.allowed %}checked{% endif %} {% if not topic.allowed and not topic.explicit_denied %}disabled{% endif %}>
-                <label class="form-check-label">Topic: {{ topic.id }} - {{ topic.name }}{% if topic.explicit_denied %} (Denied){% endif %}</label>
+</div>
+
+<div class="card mb-4 shadow-sm border-0">
+    <div class="card-body">
+        <h5 class="card-title mb-1">{{ learner.get_full_name|default:learner.username }}</h5>
+        <div class="text-muted small">
+            {% if learner.email %}<span>{{ learner.email }}</span> &bull; {% endif %}
+            <span>{{ learner.username }}</span> &bull;
+            <span class="{% if learner.is_active %}text-success{% else %}text-danger{% endif %}">
+                {% if learner.is_active %}Active{% else %}Inactive{% endif %}
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card text-center shadow-sm border-0 h-100">
+            <div class="card-body py-3">
+                <h6 class="card-title text-muted mb-1">Subjects</h6>
+                <h3 class="mb-0" id="summary-subjects">0</h3>
             </div>
-            <ul style="margin-left:20px;">
-                {% for video in topic.children %}
-                {% if video.type == "video" %}
-                <li>
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input access-checkbox" data-type="video" data-id="{{ video.id }}" data-explicit="{{ video.explicit_denied|yesno:'true,false' }}" {% if video.allowed %}checked{% endif %} {% if not video.allowed and not video.explicit_denied %}disabled{% endif %}>
-                        <label class="form-check-label">Video: {{ video.id }} - {{ video.name }}{% if video.explicit_denied %} (Denied){% endif %}</label>
-                    </div>
-                </li>
-                {% endif %}
-                {% endfor %}
-                {% for resource in topic.children %}
-                {% if resource.type == "resource" %}
-                <li>
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input access-checkbox" data-type="resource" data-id="{{ resource.id }}" data-explicit="{{ resource.explicit_denied|yesno:'true,false' }}" {% if resource.allowed %}checked{% endif %} {% if not resource.allowed and not resource.explicit_denied %}disabled{% endif %}>
-                        <label class="form-check-label">Resource: {{ resource.id }} - {{ resource.name }}{% if resource.explicit_denied %} (Denied){% endif %}</label>
-                    </div>
-                </li>
-                {% endif %}
-                {% endfor %}
-            </ul>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center shadow-sm border-0 h-100">
+            <div class="card-body py-3">
+                <h6 class="card-title text-muted mb-1">Topics</h6>
+                <h3 class="mb-0" id="summary-topics">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center shadow-sm border-0 h-100">
+            <div class="card-body py-3">
+                <h6 class="card-title text-muted mb-1">Videos</h6>
+                <h3 class="mb-0" id="summary-videos">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center shadow-sm border-0 h-100">
+            <div class="card-body py-3">
+                <h6 class="card-title text-muted mb-1">Materials</h6>
+                <h3 class="mb-0" id="summary-materials">0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info shadow-sm border-0 mb-4">
+    <h6 class="alert-heading fw-bold mb-2">How access works</h6>
+    <ul class="mb-0 ps-3 small">
+        <li>Access is <strong>allowed by default</strong>.</li>
+        <li>Restricting a Subject or Topic automatically restricts its descendants.</li>
+        <li>Child restrictions can exist independently of their parents.</li>
+        <li class="mt-2 list-unstyled ms-n3">
+            <strong>Visual states:</strong> 
+            <span class="badge bg-success ms-1"><i class="bi bi-check-circle"></i> Allowed</span>
+            <span class="badge bg-danger ms-1"><i class="bi bi-x-circle"></i> Restricted</span>
+            <span class="badge bg-secondary ms-1"><i class="bi bi-lock-fill"></i> Inherited</span>
         </li>
-        {% endfor %}
     </ul>
-</li>
-{% endfor %}
-    </ul>
-    <button type="submit" class="btn btn-primary mt-3">Save Access Settings</button>
-</form>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 py-3">
+        <div class="d-flex align-items-center gap-2 flex-grow-1">
+            <input type="text" id="access-search" class="form-control form-control-sm w-100" placeholder="Search content..." style="max-width: 300px;">
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <div class="btn-group btn-group-sm" role="group" id="access-filters">
+                <input type="radio" class="btn-check" name="accessFilter" id="filter-all" value="all" autocomplete="off" checked>
+                <label class="btn btn-outline-secondary" for="filter-all">All</label>
+
+                <input type="radio" class="btn-check" name="accessFilter" id="filter-allowed" value="allowed" autocomplete="off">
+                <label class="btn btn-outline-secondary" for="filter-allowed">Allowed</label>
+
+                <input type="radio" class="btn-check" name="accessFilter" id="filter-restricted" value="restricted" autocomplete="off">
+                <label class="btn btn-outline-secondary" for="filter-restricted">Restricted</label>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-expand-all">Expand all</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-collapse-all">Collapse all</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card-body p-0">
+        <form id="learner-access-form" method="post" action="{% url 'portal_learner_access_save' learner_id=learner.id %}">
+            {% csrf_token %}
+            <div class="d-none">{{ form.as_p }}</div>
+            
+            <div class="hierarchy-root list-group list-group-flush" id="hierarchy-container">
+            {% for subject in hierarchy %}
+                <div class="list-group-item subject-container py-3" data-hierarchy-level="subject" data-search-text="{{ subject.name|lower }}">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
+                            <button class="btn btn-sm btn-light border p-1 d-flex align-items-center justify-content-center toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#subject-collapse-{{ subject.id }}" aria-expanded="true" aria-controls="subject-collapse-{{ subject.id }}" style="width: 28px; height: 28px;">
+                                <i class="bi bi-chevron-down"></i>
+                            </button>
+                            <div class="form-check mb-0">
+                                <input type="checkbox" class="form-check-input access-checkbox" id="chk-subj-{{ subject.id }}" data-type="subject" data-id="{{ subject.id }}" data-explicit="{{ subject.explicit_denied|yesno:'true,false' }}" {% if subject.allowed %}checked{% endif %} {% if not subject.allowed and not subject.explicit_denied %}disabled{% endif %}>
+                                <label class="form-check-label fw-bold" for="chk-subj-{{ subject.id }}">{{ subject.name }}</label>
+                            </div>
+                        </div>
+                        <div class="access-badge-container ms-2 text-nowrap"></div>
+                    </div>
+                    
+                    <div class="collapse show ms-4 ps-2 border-start" id="subject-collapse-{{ subject.id }}">
+                        <div class="list-group list-group-flush">
+                        {% for topic in subject.children %}
+                            <div class="list-group-item topic-container py-2 border-0 px-0" data-hierarchy-level="topic" data-search-text="{{ topic.name|lower }}">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
+                                        <button class="btn btn-sm btn-light border p-0 d-flex align-items-center justify-content-center toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#topic-collapse-{{ topic.id }}" aria-expanded="false" aria-controls="topic-collapse-{{ topic.id }}" style="width: 24px; height: 24px;">
+                                            <i class="bi bi-chevron-down"></i>
+                                        </button>
+                                        <div class="form-check mb-0">
+                                            <input type="checkbox" class="form-check-input access-checkbox" id="chk-top-{{ topic.id }}" data-type="topic" data-id="{{ topic.id }}" data-explicit="{{ topic.explicit_denied|yesno:'true,false' }}" {% if topic.allowed %}checked{% endif %} {% if not topic.allowed and not topic.explicit_denied %}disabled{% endif %}>
+                                            <label class="form-check-label fw-semibold" for="chk-top-{{ topic.id }}">{{ topic.name }}</label>
+                                        </div>
+                                    </div>
+                                    <div class="access-badge-container ms-2 text-nowrap"></div>
+                                </div>
+                                
+                                <div class="collapse ms-4 ps-2 border-start" id="topic-collapse-{{ topic.id }}">
+                                    <div class="list-group list-group-flush">
+                                    {% for item in topic.children %}
+                                        <div class="list-group-item content-container py-1 border-0 px-0" data-hierarchy-level="content" data-search-text="{{ item.name|lower }}">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
+                                                    <i class="bi {% if item.type == 'video' %}bi-play-circle text-primary{% else %}bi-file-earmark-text text-secondary{% endif %}"></i>
+                                                    <div class="form-check mb-0">
+                                                        <input type="checkbox" class="form-check-input access-checkbox" id="chk-item-{{ item.type }}-{{ item.id }}" data-type="{{ item.type }}" data-id="{{ item.id }}" data-explicit="{{ item.explicit_denied|yesno:'true,false' }}" {% if item.allowed %}checked{% endif %} {% if not item.allowed and not item.explicit_denied %}disabled{% endif %}>
+                                                        <label class="form-check-label" for="chk-item-{{ item.type }}-{{ item.id }}" style="word-wrap: break-word; white-space: normal;">{{ item.name }}</label>
+                                                    </div>
+                                                </div>
+                                                <div class="access-badge-container ms-2 text-nowrap"></div>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="list-group-item text-muted text-center py-4">No content available.</div>
+            {% endfor %}
+            </div>
+            
+            <div class="access-action-bar p-3 mt-4 d-flex justify-content-between align-items-center bg-white">
+                <div class="text-danger fw-semibold" id="unsaved-indicator" style="visibility: hidden;">
+                    <i class="bi bi-exclamation-circle me-1"></i>Unsaved changes
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" id="btn-cancel" disabled>Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save" disabled>Save Changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script src="{% static 'portal/learner_access.js' %}"></script>
 {% endblock %}

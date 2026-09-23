@@ -1,0 +1,62 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}Learner Progress - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Learner Progress</h3>
+    <p class="text-muted mb-0">Monitor learner progress and view detailed progression reports.</p>
+  </div>
+</div>
+
+<!-- Progress Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-4">Learner Name</th>
+            <th>Username / Email</th>
+            <th style="width: 30%;">Overall Progress</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in learners_data %}
+          <tr>
+            <td class="ps-4">
+              <div class="fw-bold text-dark">{{ item.learner.get_full_name|default:item.learner.username }}</div>
+            </td>
+            <td>
+              <div class="fw-semibold text-dark">@{{ item.learner.username }}</div>
+              <div class="text-muted small">{{ item.learner.email|default:"No email registered" }}</div>
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-3">
+                <div class="progress flex-grow-1" style="height: 8px;">
+                  <div class="progress-bar {% if item.overall_progress == 100 %}bg-success{% endif %}" role="progressbar" style="width: {{ item.overall_progress }}%;"></div>
+                </div>
+                <span class="fw-bold small">{{ item.overall_progress }}%</span>
+              </div>
+            </td>
+            <td class="text-end pe-4">
+              <div class="btn-group btn-group-sm">
+                <a href="{% url 'portal_learner_progress_detail' item.learner.id %}" class="btn btn-outline-primary">
+                  View Progress
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="text-center py-4 text-muted">No learners found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
