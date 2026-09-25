@@ -320,11 +320,11 @@ def portal_video_add(request, topic_id):
             video.topic = topic
             video.save()
             messages.success(request, f"Video tutorial '{video.title}' added successfully.")
+            return redirect('portal_topic_edit', topic_id=topic.id)
         else:
-            for field, errors in form.errors.items():
-                for error in errors:
-                    messages.error(request, f"Failed to add video tutorial ({field}): {error}")
-    return redirect('portal_topic_edit', topic_id=topic.id)
+            site_config = SiteConfig.get_solo()
+            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.all().order_by('order', 'id'), 'video_form': form, 'resource_form': ResourceForm(), 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.questions.count(), 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'video_add'}
+            return render(request, 'portal/topic_edit.html', context)
 
 @admin_required
 def portal_video_delete(request, video_id):
@@ -345,11 +345,11 @@ def portal_material_add(request, topic_id):
             material.topic = topic
             material.save()
             messages.success(request, f"Learning material '{material.title}' added successfully.")
+            return redirect('portal_topic_edit', topic_id=topic.id)
         else:
-            for field, errors in form.errors.items():
-                for error in errors:
-                    messages.error(request, f"Failed to add learning material ({field}): {error}")
-    return redirect('portal_topic_edit', topic_id=topic.id)
+            site_config = SiteConfig.get_solo()
+            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.all().order_by('order', 'id'), 'video_form': VideoForm(), 'resource_form': form, 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.questions.count(), 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'material_add'}
+            return render(request, 'portal/topic_edit.html', context)
 
 @admin_required
 def portal_material_delete(request, material_id):
@@ -419,18 +419,6 @@ def portal_material_edit(request, material_id):
         return redirect('portal_topic_edit', topic_id=material.topic_id)
 
 @admin_required
-def portal_choice_delete(request, choice_id):
-    choice = get_object_or_404(Choice, id=choice_id)
-    # Schema limitation: no historical per‑choice reference in QuizAttempt
-    messages.warning(request, "The current V1 schema does not retain historical choice‑level references, so choice‑history deletion protection cannot be reliably implemented without a schema change.")
-    # Proceed with deletion
-    choice.delete()
-    messages.success(request, "Choice deleted successfully.")
-    return redirect('portal_topic_edit', topic_id=choice.question.topic_id)
-
-# --- QUESTION & CHOICE EDITOR ---
-
-@admin_required
 def portal_questions_manage(request, topic_id):
     topic = get_object_or_404(Topic, id=topic_id)
     questions = topic.questions.prefetch_related('choices').all().order_by('order', 'id')
@@ -455,7 +443,11 @@ def portal_question_add(request, topic_id):
         
         if not question_text:
             messages.error(request, "Question text cannot be empty.")
-            return redirect('portal_questions_manage', topic_id=topic.id)
+            site_config = SiteConfig.get_solo()
+            submitted_data = request.POST.copy()
+            submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+            context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+            return render(request, 'portal/question_edit.html', context)
 
         if question_type == Question.TYPE_SINGLE_CHOICE:
             choice_texts = [
@@ -466,15 +458,27 @@ def portal_question_add(request, topic_id):
             correct_index = request.POST.get('correct_choice')
             if len(choice_texts) < 2:
                 messages.error(request, "Single Choice questions must have at least 2 answer choices.")
-                return redirect('portal_questions_manage', topic_id=topic.id)
+                site_config = SiteConfig.get_solo()
+                submitted_data = request.POST.copy()
+                submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                return render(request, 'portal/question_edit.html', context)
             if not correct_index:
                 messages.error(request, "Please mark exactly one choice as the correct answer.")
-                return redirect('portal_questions_manage', topic_id=topic.id)
+                site_config = SiteConfig.get_solo()
+                submitted_data = request.POST.copy()
+                submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                return render(request, 'portal/question_edit.html', context)
             try:
                 correct_idx = int(correct_index)
             except ValueError:
                 messages.error(request, "Invalid correct choice selection.")
-                return redirect('portal_questions_manage', topic_id=topic.id)
+                site_config = SiteConfig.get_solo()
+                submitted_data = request.POST.copy()
+                submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                return render(request, 'portal/question_edit.html', context)
 
             with transaction.atomic():
                 question = Question.objects.create(
@@ -501,10 +505,18 @@ def portal_question_add(request, topic_id):
             ]
             if len(choice_texts) < 2:
                 messages.error(request, "Multiple Choice questions must have at least 2 answer choices.")
-                return redirect('portal_questions_manage', topic_id=topic.id)
+                site_config = SiteConfig.get_solo()
+                submitted_data = request.POST.copy()
+                submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                return render(request, 'portal/question_edit.html', context)
             if not correct_indices:
                 messages.error(request, "Please mark at least one choice as a correct answer.")
-                return redirect('portal_questions_manage', topic_id=topic.id)
+                site_config = SiteConfig.get_solo()
+                submitted_data = request.POST.copy()
+                submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                return render(request, 'portal/question_edit.html', context)
 
             with transaction.atomic():
                 question = Question.objects.create(
@@ -535,7 +547,11 @@ def portal_question_add(request, topic_id):
         elif question_type == Question.TYPE_SHORT_ANSWER:
             if not accepted_answers:
                 messages.error(request, "Short Answer questions require at least one accepted answer.")
-                return redirect('portal_questions_manage', topic_id=topic.id)
+                site_config = SiteConfig.get_solo()
+                submitted_data = request.POST.copy()
+                submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                return render(request, 'portal/question_edit.html', context)
             Question.objects.create(
                 topic=topic,
                 text=question_text,

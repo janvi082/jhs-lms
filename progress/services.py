@@ -385,6 +385,14 @@ def recalculate_attempt_score(attempt):
     tp, _ = TopicProgress.objects.get_or_create(user=attempt.user, topic=attempt.topic)
     tp.best_score = best_score
     tp.latest_score = attempt.score
+
+    if tp.best_score >= attempt.topic.effective_passing_score:
+        if not attempt.responses.filter(is_correct__isnull=True).exists():
+            if tp.status != TopicProgress.STATUS_COMPLETED:
+                tp.status = TopicProgress.STATUS_COMPLETED
+                if tp.completed_at is None:
+                    tp.completed_at = timezone.now()
+
     tp.save()
 
 

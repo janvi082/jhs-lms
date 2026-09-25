@@ -22,7 +22,6 @@ urlpatterns = [
     # Inline Videos & Materials
     path('videos/<int:video_id>/edit/', views.portal_video_edit, name='portal_video_edit'),
     path('materials/<int:material_id>/edit/', views.portal_material_edit, name='portal_material_edit'),
-    path('choices/<int:choice_id>/delete/', views.portal_choice_delete, name='portal_choice_delete'),
     path('topics/<int:topic_id>/videos/add/', views.portal_video_add, name='portal_video_add'),
     path('videos/<int:video_id>/delete/', views.portal_video_delete, name='portal_video_delete'),
     path('topics/<int:topic_id>/materials/add/', views.portal_material_add, name='portal_material_add'),

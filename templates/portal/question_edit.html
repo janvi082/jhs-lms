@@ -134,16 +134,16 @@
             <div class="col-md-8">
               <label class="form-label fw-semibold">Question Type</label>
               <select name="question_type" id="questionTypeSelect" class="form-select" onchange="toggleQuestionTypeFields()">
-                <option value="single" selected>Single Choice (Radio Buttons)</option>
-                <option value="multiple">Multiple Choice (Checkboxes)</option>
-                <option value="true_false">True / False</option>
-                <option value="short_answer">Short Answer</option>
-                <option value="paragraph">Paragraph (Open Text Response)</option>
+                <option value="single" {% if submitted_data.question_type == "single" or not submitted_data %}selected{% endif %}>Single Choice (Radio Buttons)</option>
+                <option value="multiple" {% if submitted_data.question_type == "multiple" %}selected{% endif %}>Multiple Choice (Checkboxes)</option>
+                <option value="true_false" {% if submitted_data.question_type == "true_false" %}selected{% endif %}>True / False</option>
+                <option value="short_answer" {% if submitted_data.question_type == "short_answer" %}selected{% endif %}>Short Answer</option>
+                <option value="paragraph" {% if submitted_data.question_type == "paragraph" %}selected{% endif %}>Paragraph (Open Text Response)</option>
               </select>
             </div>
             <div class="col-md-4 d-flex align-items-end">
               <div class="form-check mb-2">
-                <input class="form-check-input" type="checkbox" name="required" value="true" id="requiredCheck" checked>
+                <input class="form-check-input" type="checkbox" name="required" value="true" id="requiredCheck" {% if submitted_data.required or not submitted_data %}checked{% endif %}>
                 <label class="form-check-label fw-semibold" for="requiredCheck">
                   Required Question
                 </label>
@@ -153,35 +153,35 @@
 
           <div class="mb-3">
             <label class="form-label fw-semibold">Question Text</label>
-            <textarea name="question_text" class="form-control" rows="2" placeholder="Enter question text..." required></textarea>
+            <textarea name="question_text" class="form-control" rows="2" placeholder="Enter question text..." required>{{ submitted_data.question_text|default:"" }}</textarea>
           </div>
 
           <!-- SINGLE CHOICE FIELDS -->
           <div id="singleChoiceFields">
             <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="1" checked></div>
-              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="1" {% if submitted_data.correct_choice == "1" %}checked{% elif not submitted_data and "1" == "1" %}checked{% endif %}></div>
+              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text" value="{{ submitted_data.choice_1|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="2"></div>
-              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="2" {% if submitted_data.correct_choice == "2" %}checked{% endif %}></div>
+              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text" value="{{ submitted_data.choice_2|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="3"></div>
-              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="3" {% if submitted_data.correct_choice == "3" %}checked{% endif %}></div>
+              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)" value="{{ submitted_data.choice_3|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="4"></div>
-              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="4" {% if submitted_data.correct_choice == "4" %}checked{% endif %}></div>
+              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)" value="{{ submitted_data.choice_4|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="5"></div>
-              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="5" {% if submitted_data.correct_choice == "5" %}checked{% endif %}></div>
+              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)" value="{{ submitted_data.choice_5|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="6"></div>
-              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="6" {% if submitted_data.correct_choice == "6" %}checked{% endif %}></div>
+              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)" value="{{ submitted_data.choice_6|default:'' }}">
             </div>
           </div>
 
@@ -189,28 +189,28 @@
           <div id="multipleChoiceFields" style="display: none;">
             <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="1"></div>
-              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="1" {% if "1" in submitted_data.correct_choices_list %}checked{% endif %}></div>
+              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text" value="{{ submitted_data.choice_1|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="2"></div>
-              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="2" {% if "2" in submitted_data.correct_choices_list %}checked{% endif %}></div>
+              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text" value="{{ submitted_data.choice_2|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="3"></div>
-              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="3" {% if "3" in submitted_data.correct_choices_list %}checked{% endif %}></div>
+              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)" value="{{ submitted_data.choice_3|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="4"></div>
-              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="4" {% if "4" in submitted_data.correct_choices_list %}checked{% endif %}></div>
+              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)" value="{{ submitted_data.choice_4|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="5"></div>
-              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="5" {% if "5" in submitted_data.correct_choices_list %}checked{% endif %}></div>
+              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)" value="{{ submitted_data.choice_5|default:'' }}">
             </div>
             <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="6"></div>
-              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)">
+              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="6" {% if "6" in submitted_data.correct_choices_list %}checked{% endif %}></div>
+              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)" value="{{ submitted_data.choice_6|default:'' }}">
             </div>
           </div>
 
@@ -219,11 +219,11 @@
             <label class="form-label fw-semibold mb-2">Correct Answer</label>
             <div class="d-flex gap-4 p-3 bg-light rounded border">
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="tf_correct" id="tfTrue" value="true" checked>
+                <input class="form-check-input" type="radio" name="tf_correct" id="tfTrue" value="true" {% if submitted_data.tf_correct == "true" or not submitted_data %}checked{% endif %}>
                 <label class="form-check-label fw-bold text-success" for="tfTrue">True</label>
               </div>
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="tf_correct" id="tfFalse" value="false">
+                <input class="form-check-input" type="radio" name="tf_correct" id="tfFalse" value="false" {% if submitted_data.tf_correct == "false" %}checked{% endif %}>
                 <label class="form-check-label fw-bold text-danger" for="tfFalse">False</label>
               </div>
             </div>
@@ -232,7 +232,7 @@
           <!-- SHORT ANSWER FIELDS -->
           <div id="shortAnswerFields" style="display: none;">
             <label class="form-label fw-semibold">Accepted Answers (One per line)</label>
-            <textarea name="accepted_answers" class="form-control" rows="4" placeholder="Value Added Tax&#10;VAT&#10;value-added tax"></textarea>
+            <textarea name="accepted_answers" class="form-control" rows="4" placeholder="Value Added Tax&#10;VAT&#10;value-added tax">{{ submitted_data.accepted_answers|default:"" }}</textarea>
             <div class="form-text">Student answers will be trimmed and evaluated case-insensitively against any accepted answer line.</div>
           </div>
 
@@ -254,7 +254,8 @@
 </div>
 
 <script>
-function toggleQuestionTypeFields() {
+document.addEventListener("DOMContentLoaded", function() { toggleQuestionTypeFields(); });
+  function toggleQuestionTypeFields() {
   var qType = document.getElementById('questionTypeSelect').value;
   document.getElementById('singleChoiceFields').style.display = (qType === 'single') ? 'block' : 'none';
   document.getElementById('multipleChoiceFields').style.display = (qType === 'multiple') ? 'block' : 'none';

@@ -27,10 +27,10 @@
           {% for item in learners_data %}
           <tr>
             <td class="ps-4">
-              <div class="fw-bold text-dark">{{ item.learner.get_full_name|default:item.learner.username }}</div>
+              <div class="text-dark">{{ item.learner.get_full_name|default:item.learner.username }}</div>
             </td>
             <td>
-              <div class="fw-semibold text-dark">@{{ item.learner.username }}</div>
+              <div class="text-dark">{{ item.learner.username }}</div>
               <div class="text-muted small">{{ item.learner.email|default:"No email registered" }}</div>
             </td>
             <td>
@@ -38,7 +38,7 @@
                 <div class="progress flex-grow-1" style="height: 8px;">
                   <div class="progress-bar {% if item.overall_progress == 100 %}bg-success{% endif %}" role="progressbar" style="width: {{ item.overall_progress }}%;"></div>
                 </div>
-                <span class="fw-bold small">{{ item.overall_progress }}%</span>
+                <span class="small">{{ item.overall_progress }}%</span>
               </div>
             </td>
             <td class="text-end pe-4">

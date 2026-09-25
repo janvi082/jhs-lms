@@ -1,7 +1,12 @@
 {% extends 'portal/base_portal.html' %}
 
 {% block portal_content %}
-<h2 class="mt-4 mb-3">Quiz Attempt Detail</h2>
+<div class="mb-3 mt-4">
+  <a href="{% url 'portal_progress' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i> Back to Progress
+  </a>
+</div>
+<h2 class="mb-3">Quiz Attempt Detail</h2>
 <p><strong>Learner:</strong> {{ attempt.user.get_full_name|default:attempt.user.username }}</p>
 <p><strong>Quiz (Topic):</strong> {{ attempt.topic.name }}</p>
 <p><strong>Attempt #:</strong> {{ attempt.attempt_number }}</p>
