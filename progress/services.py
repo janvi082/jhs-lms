@@ -30,14 +30,14 @@ def is_topic_unlocked(user, topic):
         return True
 
     if TopicProgress.objects.filter(
-        user=user, 
-        topic=topic, 
+        user=user,
+        topic=topic,
         status__in=[TopicProgress.STATUS_COMPLETED, TopicProgress.STATUS_IN_PROGRESS]
     ).exists():
         return True
 
     effective_topics = _get_effective_progression_sequence(user, topic.subject)
-    
+
     previous_topic = None
     for i, t in enumerate(effective_topics):
         if t.id == topic.id:
@@ -73,7 +73,7 @@ def record_topic_view(user, topic):
     """
     if not user.is_authenticated or not user.is_learner:
         return None
-        
+
     if not is_topic_unlocked(user, topic):
         return TopicProgress.objects.filter(user=user, topic=topic).first()
 
@@ -82,13 +82,13 @@ def record_topic_view(user, topic):
         topic=topic,
         defaults={'status': TopicProgress.STATUS_IN_PROGRESS, 'last_accessed': timezone.now()}
     )
-    
+
     if not created:
         if progress.status == TopicProgress.STATUS_NOT_STARTED:
             progress.status = TopicProgress.STATUS_IN_PROGRESS
         progress.last_accessed = timezone.now()
         progress.save(update_fields=['status', 'last_accessed'])
-        
+
     complete_non_assessed_topic(user, topic)
     progress.refresh_from_db()
 
@@ -110,7 +110,7 @@ def get_topic_display_status(progress):
             'badge_class': 'bg-secondary',
             'text_class': 'text-muted'
         }
-    
+
     if progress.status == TopicProgress.STATUS_COMPLETED:
         return {
             'code': 'completed',
@@ -119,7 +119,7 @@ def get_topic_display_status(progress):
             'badge_class': 'bg-success',
             'text_class': 'text-success'
         }
-        
+
     if progress.status == TopicProgress.STATUS_IN_PROGRESS:
         if progress.attempts_count > 0:
             return {
@@ -136,7 +136,7 @@ def get_topic_display_status(progress):
             'badge_class': 'bg-info text-dark',
             'text_class': 'text-info'
         }
-        
+
     return {
         'code': 'not_started',
         'label': 'Not Started',
@@ -157,7 +157,7 @@ def get_subject_progress_summary(user, subject):
         active_topics = list(all_active_topics)
 
     total_active_topics = len(active_topics)
-    
+
     if total_active_topics == 0:
         return {
             'progress_percent': 0,
@@ -170,10 +170,10 @@ def get_subject_progress_summary(user, subject):
     topic_ids = [t.id for t in active_topics]
     user_progresses = TopicProgress.objects.filter(user=user, topic_id__in=topic_ids) if user.is_authenticated else []
     progress_map = {p.topic_id: p for p in user_progresses}
-    
+
     completed_count = sum(1 for p in user_progresses if p.status == TopicProgress.STATUS_COMPLETED)
     progress_percent = int(round((completed_count / total_active_topics) * 100))
-    
+
     attempted_scores = [p.best_score for p in user_progresses if p.attempts_count > 0]
     if attempted_scores:
         avg_score = sum(attempted_scores) / len(attempted_scores)
@@ -196,13 +196,44 @@ def get_overall_learner_progress(user):
     active_subjects = Subject.objects.filter(is_active=True)
     if not active_subjects.exists():
         return 0
-        
+
     subject_progresses = [
         get_subject_progress_summary(user, sub)['progress_percent']
         for sub in active_subjects
     ]
-    
+
     return int(round(sum(subject_progresses) / len(subject_progresses)))
+
+def reconcile_topic_progress(user, topic):
+    from quizzes.models import QuizAttempt
+
+    attempts = list(QuizAttempt.objects.filter(user=user, topic=topic).order_by('created_at', 'id'))
+
+    tp, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
+
+    tp.attempts_count = len(attempts)
+
+    fully_graded_attempts = []
+    for a in attempts:
+        if not a.responses.filter(is_correct__isnull=True).exists():
+            fully_graded_attempts.append(a)
+
+    if fully_graded_attempts:
+        tp.best_score = max(a.score for a in fully_graded_attempts)
+        tp.latest_score = fully_graded_attempts[-1].score
+
+    has_passed = any(a.passed for a in fully_graded_attempts)
+
+    if has_passed and tp.status != TopicProgress.STATUS_COMPLETED:
+        tp.status = TopicProgress.STATUS_COMPLETED
+        if tp.completed_at is None:
+            earliest_passed = next(a for a in fully_graded_attempts if a.passed)
+            tp.completed_at = earliest_passed.created_at
+    elif not has_passed and len(attempts) > 0 and tp.status == TopicProgress.STATUS_NOT_STARTED:
+        tp.status = TopicProgress.STATUS_IN_PROGRESS
+
+    tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at'])
+    return tp
 
 def submit_quiz_attempt(user, topic, submitted_answers):
     """
@@ -214,10 +245,10 @@ def submit_quiz_attempt(user, topic, submitted_answers):
 
     questions = list(topic.questions.prefetch_related('choices').all())
     total_questions = len(questions)
-    
+
     if total_questions == 0:
         raise ValueError("Cannot take quiz on a topic with zero questions.")
-        
+
     def get_post_val(key):
         if hasattr(submitted_answers, 'getlist'):
             vals = submitted_answers.getlist(key) or submitted_answers.getlist(str(key))
@@ -313,10 +344,10 @@ def submit_quiz_attempt(user, topic, submitted_answers):
 
     passing_score_used = topic.effective_passing_score
     passed = score >= passing_score_used
-    
+
     previous_attempts_count = QuizAttempt.objects.filter(user=user, topic=topic).count()
     attempt_number = previous_attempts_count + 1
-    
+
     attempt = QuizAttempt.objects.create(
         user=user,
         topic=topic,
@@ -338,21 +369,8 @@ def submit_quiz_attempt(user, topic, submitted_answers):
         if choice_ids:
             valid_choices = [c for c in q.choices.all() if c.id in choice_ids]
             resp.selected_choices.set(valid_choices)
-    
-    tp, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
-    tp.attempts_count += 1
-    tp.latest_score = score
-    tp.best_score = max(tp.best_score, score)
-    
-    if passed:
-        tp.status = TopicProgress.STATUS_COMPLETED
-        if tp.completed_at is None:
-            tp.completed_at = timezone.now()
-    else:
-        if tp.status == TopicProgress.STATUS_NOT_STARTED:
-            tp.status = TopicProgress.STATUS_IN_PROGRESS
-            
-    tp.save()
+
+    tp = reconcile_topic_progress(user, topic)
     return attempt, tp
 
 def recalculate_attempt_score(attempt):
@@ -368,31 +386,11 @@ def recalculate_attempt_score(attempt):
     else:
         # No gradable questions – keep numeric 0; UI will show N/A
         attempt.score = 0
-    # Pass only if there is a numeric score and meets threshold
-    attempt.passed = (attempt.score >= attempt.passing_score_used) if gradable > 0 else False
+    # Pass only if there is a numeric score and meets current effective threshold
+    current_passing_score = get_effective_passing_score(attempt.topic)
+    attempt.passed = (attempt.score >= current_passing_score) if gradable > 0 else False
     attempt.save()
 
-    # Synchronize TopicProgress.best_score based on all graded attempts for this learner and topic
-    from django.db.models import Max
-    from quizzes.models import QuizAttempt
-    best = QuizAttempt.objects.filter(
-        user=attempt.user,
-        topic=attempt.topic,
-        responses__is_correct__isnull=False
-    ).distinct().aggregate(Max('score'))['score__max']
-    best_score = best if best is not None else 0
-    from .models import TopicProgress
-    tp, _ = TopicProgress.objects.get_or_create(user=attempt.user, topic=attempt.topic)
-    tp.best_score = best_score
-    tp.latest_score = attempt.score
-
-    if tp.best_score >= attempt.topic.effective_passing_score:
-        if not attempt.responses.filter(is_correct__isnull=True).exists():
-            if tp.status != TopicProgress.STATUS_COMPLETED:
-                tp.status = TopicProgress.STATUS_COMPLETED
-                if tp.completed_at is None:
-                    tp.completed_at = timezone.now()
-
-    tp.save()
+    tp = reconcile_topic_progress(attempt.user, attempt.topic)
 
 
