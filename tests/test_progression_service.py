@@ -85,24 +85,28 @@ class ProgressionServiceTests(TestCase):
     # 13. Best score never decreases after a lower retake.
     def test_best_score_never_decreases(self):
         # We need a question to test quiz submission
-        q = Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        q = Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SINGLE_CHOICE, text='Q')
+        c_right = Choice.objects.create(question=q, text='Right', is_correct=True)
+        c_wrong = Choice.objects.create(question=q, text='Wrong', is_correct=False)
 
         class FakePost:
-            def get(self, key): return 'Right'
+            def get(self, key): return str(c_right.id)
         submit_quiz_attempt(self.user, self.topic1, FakePost())
         tp = TopicProgress.objects.get(user=self.user, topic=self.topic1)
-        tp.best_score = 100
-        tp.status = TopicProgress.STATUS_COMPLETED
-        tp.save()
+        
+        # Verify it passed and got 100
+        self.assertEqual(tp.best_score, 100)
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
 
         # Failed attempt
         class FakePostFail:
-            def get(self, key): return 'Wrong'
+            def get(self, key): return str(c_wrong.id)
         submit_quiz_attempt(self.user, self.topic1, FakePostFail())
 
         tp.refresh_from_db()
         self.assertEqual(tp.best_score, 100)
-        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED) # #12 Lower-scoring retake does not relock
+        self.assertEqual(tp.latest_score, 0)
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
 
     # 14. Non-assessed topic is not completed before visit.
     def test_zero_question_not_completed_before_visit(self):

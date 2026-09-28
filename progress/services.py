@@ -204,33 +204,76 @@ def get_overall_learner_progress(user):
 
     return int(round(sum(subject_progresses) / len(subject_progresses)))
 
+def calculate_reconciled_fields(topic_assessment_required, attempts_data, current_status, current_completed_at):
+    from progress.models import TopicProgress
+    
+    attempts_count = len(attempts_data)
+    fully_graded = [a for a in attempts_data if a['is_fully_graded']]
+    
+    if fully_graded:
+        best_score = max(a['score'] for a in fully_graded)
+        latest_score = fully_graded[-1]['score']
+    else:
+        best_score = 0
+        latest_score = 0
+        
+    status = current_status
+    completed_at = current_completed_at
+    
+    if topic_assessment_required:
+        has_passed = any(a['passed'] for a in fully_graded)
+        if has_passed:
+            status = TopicProgress.STATUS_COMPLETED
+            if completed_at is None:
+                earliest_passed = next(a for a in fully_graded if a['passed'])
+                completed_at = earliest_passed['created_at']
+        elif attempts_count > 0:
+            status = TopicProgress.STATUS_IN_PROGRESS
+            completed_at = None
+        else:
+            status = TopicProgress.STATUS_NOT_STARTED
+            completed_at = None
+            
+    return {
+        'attempts_count': attempts_count,
+        'best_score': best_score,
+        'latest_score': latest_score,
+        'status': status,
+        'completed_at': completed_at
+    }
+
 def reconcile_topic_progress(user, topic):
     from quizzes.models import QuizAttempt
+    from django.db.models import Count, Q
 
-    attempts = list(QuizAttempt.objects.filter(user=user, topic=topic).order_by('created_at', 'id'))
+    attempts = QuizAttempt.objects.filter(user=user, topic=topic).annotate(
+        ungraded_count=Count('responses', filter=Q(responses__is_correct__isnull=True))
+    ).order_by('created_at', 'id')
 
     tp, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
 
-    tp.attempts_count = len(attempts)
+    attempts_data = [
+        {
+            'score': a.score,
+            'passed': a.passed,
+            'created_at': a.created_at,
+            'is_fully_graded': a.ungraded_count == 0
+        }
+        for a in attempts
+    ]
 
-    fully_graded_attempts = []
-    for a in attempts:
-        if not a.responses.filter(is_correct__isnull=True).exists():
-            fully_graded_attempts.append(a)
+    result = calculate_reconciled_fields(
+        topic_assessment_required=topic.assessment_required,
+        attempts_data=attempts_data,
+        current_status=tp.status,
+        current_completed_at=tp.completed_at
+    )
 
-    if fully_graded_attempts:
-        tp.best_score = max(a.score for a in fully_graded_attempts)
-        tp.latest_score = fully_graded_attempts[-1].score
-
-    has_passed = any(a.passed for a in fully_graded_attempts)
-
-    if has_passed and tp.status != TopicProgress.STATUS_COMPLETED:
-        tp.status = TopicProgress.STATUS_COMPLETED
-        if tp.completed_at is None:
-            earliest_passed = next(a for a in fully_graded_attempts if a.passed)
-            tp.completed_at = earliest_passed.created_at
-    elif not has_passed and len(attempts) > 0 and tp.status == TopicProgress.STATUS_NOT_STARTED:
-        tp.status = TopicProgress.STATUS_IN_PROGRESS
+    tp.attempts_count = result['attempts_count']
+    tp.best_score = result['best_score']
+    tp.latest_score = result['latest_score']
+    tp.status = result['status']
+    tp.completed_at = result['completed_at']
 
     tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at'])
     return tp
