@@ -308,7 +308,7 @@ class RepairOptimizationTests(TestCase):
     def test_reconcile_topic_progress_query_count(self):
         from progress.services import reconcile_topic_progress
         # We expect a small fixed number of queries regardless of attempts
-        with self.assertNumQueries(6):
+        with self.assertNumQueries(7):
             reconcile_topic_progress(self.learner, self.topic1)
 
     def test_repair_topic_progress_query_count(self):

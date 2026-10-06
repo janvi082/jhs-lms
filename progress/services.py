@@ -56,7 +56,7 @@ def is_topic_unlocked(user, topic):
 
 def complete_non_assessed_topic(user, topic):
     from access.services import has_subject_access, has_topic_access
-    if not topic.assessment_required:
+    if not topic.assessment_required or topic.active_question_count == 0:
         if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
             if is_topic_unlocked(user, topic):
                 progress, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
@@ -311,7 +311,7 @@ def reconcile_topic_progress(user, topic):
     ]
 
     result = calculate_reconciled_fields(
-        topic_assessment_required=topic.assessment_required,
+        topic_assessment_required=topic.assessment_required and topic.questions.filter(is_active=True).exists(),
         attempts_data=attempts_data,
         current_status=tp.status,
         current_completed_at=tp.completed_at
