@@ -34,25 +34,25 @@ class AdminAttemptTests(TestCase):
         """
         qmap = {}
         # Single choice
-        q_sc = Question.objects.create(topic=self.topic, text='Single Choice?', question_type=Question.TYPE_SINGLE_CHOICE, order=1)
+        q_sc = Question.objects.create(required=False, topic=self.topic, text='Single Choice?', question_type=Question.TYPE_SINGLE_CHOICE, order=1)
         c_sc_correct = Choice.objects.create(question=q_sc, text='Correct SC', is_correct=True)
         c_sc_wrong = Choice.objects.create(question=q_sc, text='Wrong SC', is_correct=False)
         qmap['single'] = (q_sc, [c_sc_correct.id], [c_sc_wrong.id])
         # Multiple choice (if requested)
         if multiple_choice:
-            q_mc = Question.objects.create(topic=self.topic, text='Multiple Choice?', question_type=Question.TYPE_MULTIPLE_CHOICE, order=2)
+            q_mc = Question.objects.create(required=False, topic=self.topic, text='Multiple Choice?', question_type=Question.TYPE_MULTIPLE_CHOICE, order=2)
             c_mc_correct1 = Choice.objects.create(question=q_mc, text='Correct MC 1', is_correct=True)
             c_mc_correct2 = Choice.objects.create(question=q_mc, text='Correct MC 2', is_correct=True)
             c_mc_wrong = Choice.objects.create(question=q_mc, text='Wrong MC', is_correct=False)
             qmap['multiple'] = (q_mc, [c_mc_correct1.id, c_mc_correct2.id], [c_mc_wrong.id])
         # True/False
-        q_tf = Question.objects.create(topic=self.topic, text='True or False?', question_type=Question.TYPE_TRUE_FALSE, order=3)
+        q_tf = Question.objects.create(required=False, topic=self.topic, text='True or False?', question_type=Question.TYPE_TRUE_FALSE, order=3)
         c_tf_true = Choice.objects.create(question=q_tf, text='True', is_correct=True)
         c_tf_false = Choice.objects.create(question=q_tf, text='False', is_correct=False)
         qmap['tf'] = (q_tf, [c_tf_true.id], [c_tf_false.id])
         # Short answer (if requested)
         if short_answer:
-            q_sa = Question.objects.create(
+            q_sa = Question.objects.create(required=False, 
                 topic=self.topic,
                 text='Short Answer?',
                 question_type=Question.TYPE_SHORT_ANSWER,
@@ -62,7 +62,7 @@ class AdminAttemptTests(TestCase):
             qmap['short'] = (q_sa, None, None)
         # Paragraph (optional)
         if include_paragraph:
-            q_para = Question.objects.create(topic=self.topic, text='Explain...', question_type=Question.TYPE_PARAGRAPH, order=5)
+            q_para = Question.objects.create(required=False, topic=self.topic, text='Explain...', question_type=Question.TYPE_PARAGRAPH, order=5)
             qmap['paragraph'] = (q_para, None, None)
         return qmap
 
@@ -173,7 +173,7 @@ class AdminAttemptTests(TestCase):
         self.assertTrue(response.is_correct)
 
     def test_all_paragraph_questions_display_NA_and_no_fail(self):
-        q_para = Question.objects.create(topic=self.topic, text='Explain X', question_type=Question.TYPE_PARAGRAPH, order=1)
+        q_para = Question.objects.create(required=False, topic=self.topic, text='Explain X', question_type=Question.TYPE_PARAGRAPH, order=1)
         submission = {q_para.id: 'My explanation'}
         attempt, _ = submit_quiz_attempt(self.learner, self.topic, submission)
         self.client.login(username='admin', password='adminpass')
@@ -186,13 +186,28 @@ class AdminAttemptTests(TestCase):
 
     def test_protected_question_deletion_shows_friendly_message(self):
         qmap = self._create_questions()
-        submission = {qmap['single'][0].id: qmap['single'][1][0]}
+        used_q = qmap['single'][0]
+        unused_q = qmap['tf'][0]
+        
+        submission = {used_q.id: qmap['single'][1][0]}
         attempt, _ = submit_quiz_attempt(self.learner, self.topic, submission)
+        
         self.client.login(username='admin', password='adminpass')
-        delete_url = reverse('portal_question_delete', args=[qmap['single'][0].id])
+        
+        # 1. Used question should be soft-deleted (retired)
+        delete_url = reverse('portal_question_delete', args=[used_q.id])
         resp = self.client.post(delete_url, follow=True)
-        self.assertContains(resp, 'Cannot delete this question because it is referenced by existing quiz attempts')
-        self.assertTrue(Question.objects.filter(id=qmap['single'][0].id).exists())
+        self.assertContains(resp, 'Question retired to preserve historical attempts.')
+        
+        used_q.refresh_from_db()
+        self.assertFalse(used_q.is_active)
+        self.assertTrue(attempt.responses.filter(question=used_q).exists())
+        
+        # 2. Unused question should be hard-deleted
+        delete_unused_url = reverse('portal_question_delete', args=[unused_q.id])
+        resp2 = self.client.post(delete_unused_url, follow=True)
+        self.assertContains(resp2, 'Question permanently deleted.')
+        self.assertFalse(Question.objects.filter(id=unused_q.id).exists())
 
     def test_existing_grading_edge_cases(self):
         qmap = self._create_questions(multiple_choice=True)

@@ -19,7 +19,7 @@ class Task3AccessEnforcementTests(TestCase):
         # Create enough dummy questions to satisfy the required question count (5)
         from quizzes.models import Question, Choice
         for i in range(5):
-            q = Question.objects.create(
+            q = Question.objects.create(required=False, 
                 topic=self.topic,
                 text=f'Sample question {i+1}',
                 question_type=Question.TYPE_SINGLE_CHOICE

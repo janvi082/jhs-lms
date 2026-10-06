@@ -10,6 +10,6 @@ def admin_required(view_func):
             return redirect('login')
         if not request.user.is_admin_user:
             messages.error(request, "Access restricted. You do not have permission to access the JHS Admin Portal.")
-            return HttpResponseForbidden('Forbidden')
+            return redirect('learner_dashboard')
         return view_func(request, *args, **kwargs)
     return _wrapped_view

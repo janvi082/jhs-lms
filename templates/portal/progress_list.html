@@ -3,7 +3,7 @@
 {% block title %}Learner Progress - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
   <div>
     <h3 class="fw-bold text-dark mb-1">Learner Progress</h3>
     <p class="text-muted mb-0">Monitor learner progress and view detailed progression reports.</p>
@@ -19,7 +19,7 @@
           <tr>
             <th class="ps-4">Learner Name</th>
             <th>Username / Email</th>
-            <th style="width: 30%;">Overall Progress</th>
+            <th style="min-width: 150px;">Overall Progress</th>
             <th class="text-end pe-4">Actions</th>
           </tr>
         </thead>
@@ -35,7 +35,7 @@
             </td>
             <td>
               <div class="d-flex align-items-center gap-3">
-                <div class="progress flex-grow-1" style="height: 8px;">
+                <div class="progress flex-grow-1" style="height: 12px;">
                   <div class="progress-bar {% if item.overall_progress == 100 %}bg-success{% endif %}" role="progressbar" style="width: {{ item.overall_progress }}%;"></div>
                 </div>
                 <span class="small">{{ item.overall_progress }}%</span>
@@ -43,8 +43,9 @@
             </td>
             <td class="text-end pe-4">
               <div class="btn-group btn-group-sm">
-                <a href="{% url 'portal_learner_progress_detail' item.learner.id %}" class="btn btn-outline-primary">
-                  View Progress
+                <a href="{% url 'portal_learner_progress_detail' item.learner.id %}" class="btn btn-outline-primary text-nowrap" title="View Progress" aria-label="View Progress">
+                  <i class="bi bi-bar-chart-fill d-inline d-md-none"></i>
+                  <span class="d-none d-md-inline">View Progress</span>
                 </a>
               </div>
             </td>

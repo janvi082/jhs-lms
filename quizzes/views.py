@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseBadRequest
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from content.models import Topic
 from progress.services import submit_quiz_attempt, get_topic_display_status, is_topic_unlocked, get_next_topic
 from .models import Question, Choice, QuizAttempt
@@ -22,14 +22,38 @@ def quiz_modal(request, slug, topic_id):
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
         
-    questions = list(topic.questions.prefetch_related('choices').all())
+    questions = list(topic.questions.filter(is_active=True).prefetch_related('choices').all())
+    
+    session_key = f'active_quiz_topic_{topic.id}'
     
     if request.method == 'POST':
-        attempt, progress = submit_quiz_attempt(request.user, topic, request.POST)
+        session_question_ids = request.session.get(session_key)
+        if not session_question_ids:
+            return HttpResponseBadRequest("Quiz session expired or invalid. Please reload the quiz.")
+            
+        try:
+            attempt, progress = submit_quiz_attempt(request.user, topic, request.POST, session_question_ids)
+        except ValidationError as e:
+            from django.contrib import messages
+            messages.error(request, e.message)
+            import json
+            submitted_json = json.dumps(dict(request.POST.lists()))
+            context = {
+                'subject': topic.subject,
+                'topic': topic,
+                'questions': questions,
+                'submitted_data_json': submitted_json,
+            }
+            return render(request, 'learner/quiz_modal.html', context)
+        
+        # Re-fetch the same questions for the review logic below
+        qs = topic.questions.filter(id__in=session_question_ids).prefetch_related('choices')
+        q_map = {q.id: q for q in qs}
+        session_questions = [q_map[qid] for qid in session_question_ids if qid in q_map]
         
         # Build question review details for current submission
         review_data = []
-        for q in questions:
+        for q in session_questions:
             user_choice_id = request.POST.get(str(q.id)) or request.POST.get(q.id)
             user_choice = None
             if user_choice_id:
@@ -52,6 +76,9 @@ def quiz_modal(request, slug, topic_id):
         request.session[f'quiz_review_{attempt.id}'] = review_data
         
         return redirect('quiz_result', slug=slug, topic_id=topic.id, attempt_id=attempt.id)
+    
+    # Store exact Question IDs in the Django session for the GET request
+    request.session[session_key] = [q.id for q in questions]
     
     context = {
         'subject': topic.subject,
@@ -154,6 +181,7 @@ def quiz_result(request, slug, topic_id, attempt_id):
         'correct_count': correct_count,
         'wrong_count': wrong_count,
         'requires_review_count': requires_review_count,
+        'skipped_count': attempt.total_questions - attempt.responses.count(),
         'gradable_questions': gradable_questions,
         'has_gradable': has_gradable,
         'question_reviews': question_reviews,
@@ -181,6 +209,14 @@ def quiz_submit(request, topic_id):
     if not topic.is_assessment_ready():
         return HttpResponseBadRequest("Quiz is not assessment-ready.")
         
-    attempt, progress = submit_quiz_attempt(request.user, topic, request.POST)
+    session_key = f'active_quiz_topic_{topic.id}'
+    session_question_ids = request.session.get(session_key)
+    if not session_question_ids:
+        return HttpResponseBadRequest("Quiz session expired or invalid. Please reload the quiz.")
+        
+    try:
+        attempt, progress = submit_quiz_attempt(request.user, topic, request.POST, session_question_ids)
+    except ValidationError as e:
+        return HttpResponseBadRequest(str(e.message))
     return redirect('quiz_result', slug=topic.subject.slug, topic_id=topic.id, attempt_id=attempt.id)
 

@@ -20,10 +20,10 @@ class AdminAttemptTemplateTests(TestCase):
         self.subject = Subject.objects.create(name='Test Subject', slug='test', is_active=True)
         self.topic = Topic.objects.create(subject=self.subject, name='Test Topic', is_active=True)
         # Create questions including paragraph
-        self.q_sc = Question.objects.create(topic=self.topic, text='SC?', question_type=Question.TYPE_SINGLE_CHOICE, order=1)
+        self.q_sc = Question.objects.create(required=False, topic=self.topic, text='SC?', question_type=Question.TYPE_SINGLE_CHOICE, order=1)
         self.c_sc_corr = Choice.objects.create(question=self.q_sc, text='Correct', is_correct=True)
         self.c_sc_wrong = Choice.objects.create(question=self.q_sc, text='Wrong', is_correct=False)
-        self.q_para = Question.objects.create(topic=self.topic, text='Explain', question_type=Question.TYPE_PARAGRAPH, order=2)
+        self.q_para = Question.objects.create(required=False, topic=self.topic, text='Explain', question_type=Question.TYPE_PARAGRAPH, order=2)
         # Submit attempt
         submission = {
             self.q_sc.id: self.c_sc_corr.id,

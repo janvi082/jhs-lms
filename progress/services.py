@@ -111,6 +111,15 @@ def get_topic_display_status(progress):
             'text_class': 'text-muted'
         }
 
+    if getattr(progress, 'has_pending_review', False):
+        return {
+            'code': 'pending_review',
+            'label': 'Pending Review',
+            'icon': '⏳',
+            'badge_class': 'bg-info text-dark',
+            'text_class': 'text-info'
+        }
+
     if progress.status == TopicProgress.STATUS_COMPLETED:
         return {
             'code': 'completed',
@@ -145,6 +154,39 @@ def get_topic_display_status(progress):
         'text_class': 'text-muted'
     }
 
+def annotate_progress_with_review_status(queryset):
+    """
+    Annotates a TopicProgress queryset with:
+    - has_pending_review: True if any attempt has responses with is_correct=None
+    - has_finalized_score: True if there is at least one attempt with no pending responses
+    """
+    from quizzes.models import QuizAttempt, QuizResponse
+    from django.db.models import Exists, OuterRef
+    
+    pending_responses = QuizResponse.objects.filter(
+        attempt_id=OuterRef('pk'), 
+        is_correct__isnull=True
+    )
+    
+    finalized_attempts = QuizAttempt.objects.filter(
+        user=OuterRef('user'),
+        topic_id=OuterRef('topic_id')
+    ).annotate(
+        has_pending=Exists(pending_responses)
+    ).filter(has_pending=False)
+    
+    pending_attempts = QuizAttempt.objects.filter(
+        user=OuterRef('user'),
+        topic_id=OuterRef('topic_id')
+    ).annotate(
+        has_pending=Exists(pending_responses)
+    ).filter(has_pending=True)
+    
+    return queryset.annotate(
+        has_finalized_score=Exists(finalized_attempts),
+        has_pending_review=Exists(pending_attempts)
+    )
+
 def get_subject_progress_summary(user, subject):
     """
     Calculates Progress %, Understanding %, and Assessments Passed for a subject.
@@ -168,13 +210,19 @@ def get_subject_progress_summary(user, subject):
         }
 
     topic_ids = [t.id for t in active_topics]
-    user_progresses = TopicProgress.objects.filter(user=user, topic_id__in=topic_ids) if user.is_authenticated else []
+    
+    if user.is_authenticated:
+        base_qs = TopicProgress.objects.filter(user=user, topic_id__in=topic_ids)
+        user_progresses = list(annotate_progress_with_review_status(base_qs))
+    else:
+        user_progresses = []
+        
     progress_map = {p.topic_id: p for p in user_progresses}
 
     completed_count = sum(1 for p in user_progresses if p.status == TopicProgress.STATUS_COMPLETED)
     progress_percent = int(round((completed_count / total_active_topics) * 100))
 
-    attempted_scores = [p.best_score for p in user_progresses if p.attempts_count > 0]
+    attempted_scores = [p.best_score for p in user_progresses if p.attempts_count > 0 and getattr(p, 'has_finalized_score', True)]
     if attempted_scores:
         avg_score = sum(attempted_scores) / len(attempted_scores)
         understanding_percent = int(round(avg_score))
@@ -278,7 +326,7 @@ def reconcile_topic_progress(user, topic):
     tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at'])
     return tp
 
-def submit_quiz_attempt(user, topic, submitted_answers):
+def submit_quiz_attempt(user, topic, submitted_answers, session_question_ids=None):
     """
     Grading engine and attempt logging supporting 5 question types:
     Single Choice, Multiple Choice, True/False, Short Answer, Paragraph.
@@ -286,7 +334,13 @@ def submit_quiz_attempt(user, topic, submitted_answers):
     """
     from quizzes.models import QuizResponse
 
-    questions = list(topic.questions.prefetch_related('choices').all())
+    if session_question_ids is not None:
+        qs = topic.questions.filter(id__in=session_question_ids).prefetch_related('choices')
+        q_map = {q.id: q for q in qs}
+        questions = [q_map[qid] for qid in session_question_ids if qid in q_map]
+    else:
+        questions = list(topic.questions.prefetch_related('choices').all())
+        
     total_questions = len(questions)
 
     if total_questions == 0:
@@ -305,6 +359,21 @@ def submit_quiz_attempt(user, topic, submitted_answers):
         if isinstance(v, (list, tuple)):
             return v
         return [v]
+
+    from django.core.exceptions import ValidationError
+
+    # VALIDATION PASS
+    for q in questions:
+        raw_vals = get_post_val(q.id)
+        if q.required:
+            is_answered = False
+            if q.question_type in (Question.TYPE_SINGLE_CHOICE, Question.TYPE_MULTIPLE_CHOICE, Question.TYPE_TRUE_FALSE):
+                is_answered = bool(raw_vals and any(str(v).strip() for v in raw_vals))
+            else:
+                is_answered = bool(raw_vals and raw_vals[0].strip())
+            
+            if not is_answered:
+                raise ValidationError(f"Question '{q.text}' is required.")
 
     correct_count = 0
     gradable_count = 0
@@ -357,25 +426,31 @@ def submit_quiz_attempt(user, topic, submitted_answers):
                 is_correct = None
 
         elif q.question_type == Question.TYPE_SHORT_ANSWER:
-            gradable_count += 1
             text_resp = raw_vals[0] if raw_vals else ''
             trimmed_text = text_resp.strip()
-            accepted = q.get_accepted_answers_list()
-            if trimmed_text and any(trimmed_text.lower() == acc.strip().lower() for acc in accepted):
-                is_correct = True
-                correct_count += 1
+            if not trimmed_text and not q.required:
+                is_correct = None
             else:
-                is_correct = False
+                gradable_count += 1
+                accepted = q.get_accepted_answers_list()
+                if trimmed_text and any(trimmed_text.lower() == acc.strip().lower() for acc in accepted):
+                    is_correct = True
+                    correct_count += 1
+                else:
+                    is_correct = False
 
         elif q.question_type == Question.TYPE_PARAGRAPH:
             text_resp = raw_vals[0] if raw_vals else ''
-            is_correct = None
+            trimmed_text = text_resp.strip()
+            if not trimmed_text and not q.required:
+                pass # remains is_correct = None, but we will skip appending it
+            else:
+                is_correct = None
 
         # Append response only if it should be recorded:
-        # - For paragraph questions, always record (is_correct is None).
-        # - For other question types, record only if is_correct is not None (i.e., an answer was provided).
         if q.question_type == Question.TYPE_PARAGRAPH:
-            response_objects.append((q, is_correct, text_resp, selected_choice_ids))
+            if text_resp.strip() or q.required:
+                response_objects.append((q, is_correct, text_resp, selected_choice_ids))
         elif is_correct is not None:
             response_objects.append((q, is_correct, text_resp, selected_choice_ids))
 
@@ -429,9 +504,8 @@ def recalculate_attempt_score(attempt):
     else:
         # No gradable questions – keep numeric 0; UI will show N/A
         attempt.score = 0
-    # Pass only if there is a numeric score and meets current effective threshold
-    current_passing_score = get_effective_passing_score(attempt.topic)
-    attempt.passed = (attempt.score >= current_passing_score) if gradable > 0 else False
+    # Pass only if there is a numeric score and meets the threshold saved at attempt time
+    attempt.passed = (attempt.score >= attempt.passing_score_used) if gradable > 0 else False
     attempt.save()
 
     tp = reconcile_topic_progress(attempt.user, attempt.topic)

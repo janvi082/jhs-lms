@@ -3,13 +3,18 @@
 {% block title %}{{ subject.name }} - Topic Index - JHS Training Portal{% endblock %}
 
 {% block content %}
-<!-- Breadcrumb -->
-<nav aria-label="breadcrumb" class="mb-3">
-  <ol class="breadcrumb mb-0">
-    <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
-    <li class="breadcrumb-item active" aria-current="page">{{ subject.name }}</li>
-  </ol>
-</nav>
+<!-- Breadcrumb & Navigation -->
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <a href="{% url 'learner_dashboard' %}" class="btn btn-sm btn-outline-secondary text-nowrap">
+    <i class="bi bi-arrow-left me-1"></i> Back
+  </a>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ subject.name }}</li>
+    </ol>
+  </nav>
+</div>
 
 <!-- Subject Summary Card -->
 <div class="card bg-white border-0 shadow-sm mb-4">

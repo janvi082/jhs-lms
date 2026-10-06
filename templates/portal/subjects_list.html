@@ -3,13 +3,13 @@
 {% block title %}Manage Subjects - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
   <div>
     <h3 class="fw-bold text-dark mb-1">Subjects Management</h3>
     <p class="text-muted mb-0">Create and manage training subjects for your organization.</p>
   </div>
   
-  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
+  <button type="button" class="btn btn-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
     <i class="bi bi-plus-lg me-1"></i> Add Subject
   </button>
 </div>
@@ -48,7 +48,7 @@
             <td>
               <span class="fw-semibold text-dark">{{ sub.name }}</span>
             </td>
-            <td class="text-secondary text-truncate small" style="max-width: 250px;">
+            <td class="text-secondary small">
               {{ sub.description|default:"-" }}
             </td>
             <td>
@@ -64,14 +64,14 @@
             <td class="text-end pe-4">
               <div class="d-inline-flex align-items-center gap-3">
                 <!-- Group 1: Standard Actions -->
-                <div class="d-inline-flex gap-1">
-                  <a href="{% url 'portal_subject_topics_list' sub.id %}" class="btn btn-sm btn-outline-primary" title="Manage Topics">
+                <div class="d-inline-flex align-items-center gap-1">
+                  <a href="{% url 'portal_subject_topics_list' sub.id %}" class="btn btn-sm btn-outline-primary text-nowrap" title="Manage Topics">
                     <i class="bi bi-list-task me-1"></i> Topics
                   </a>
                   <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSubjectModal{{ sub.id }}" title="Edit">
                     <i class="bi bi-pencil"></i>
                   </button>
-                  <form action="{% url 'portal_subject_archive' sub.id %}" method="post" class="d-inline m-0">
+                  <form action="{% url 'portal_subject_archive' sub.id %}" method="post" class="m-0" style="display: contents;">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm {% if sub.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}" title="{% if sub.is_active %}Archive{% else %}Activate{% endif %}">
                       <i class="bi {% if sub.is_active %}bi-archive{% else %}bi-arrow-counterclockwise{% endif %}"></i>

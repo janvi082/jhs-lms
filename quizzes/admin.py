@@ -14,8 +14,20 @@ class ChoiceInlineFormSet(BaseInlineFormSet):
         correct_count = 0
         total_choices = 0
         for form in self.forms:
-            if not form.cleaned_data or form.cleaned_data.get('DELETE'):
+            if not form.cleaned_data:
                 continue
+
+            # Historical attempt protection
+            if form.instance and form.instance.pk:
+                if form.instance.responses.exists():
+                    if form.cleaned_data.get('DELETE'):
+                        raise ValidationError(f"Cannot delete choice '{form.instance.text}' because it has been used in previous quiz attempts.")
+                    if form.has_changed():
+                        raise ValidationError(f"Cannot modify choice '{form.instance.text}' because it has been used in previous quiz attempts.")
+
+            if form.cleaned_data.get('DELETE'):
+                continue
+                
             total_choices += 1
             if form.cleaned_data.get('is_correct'):
                 correct_count += 1
@@ -31,12 +43,32 @@ class ChoiceInline(admin.TabularInline):
     formset = ChoiceInlineFormSet
     extra = 4
 
+    def has_add_permission(self, request, obj=None):
+        if obj and obj.responses.exists():
+            return False
+        return super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.responses.exists():
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.responses.exists():
+            return False
+        return super().has_delete_permission(request, obj)
+
 @admin.register(Question)
 class QuestionAdmin(SortableAdminMixin, admin.ModelAdmin):
     list_display = ('text_truncated', 'topic', 'question_type', 'required', 'order', 'choices_count')
     list_filter = ('question_type', 'required', 'topic__subject', 'topic')
     search_fields = ('text', 'accepted_answers')
     inlines = [ChoiceInline]
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj and obj.responses.exists():
+            return [f.name for f in self.model._meta.fields if not f.auto_created]
+        return super().get_readonly_fields(request, obj)
 
     def text_truncated(self, obj):
         return obj.text[:80]

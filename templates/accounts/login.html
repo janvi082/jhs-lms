@@ -36,7 +36,12 @@
 
           <div class="mb-3">
             <label for="id_password" class="form-label fw-medium small">Password</label>
-            <input type="password" name="password" id="id_password" class="form-control" required placeholder="password">
+            <div class="input-group">
+              <input type="password" name="password" id="id_password" class="form-control" required placeholder="password">
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
           </div>
 
           <button type="submit" class="btn btn-primary w-100 py-2 mt-2">
@@ -50,4 +55,17 @@
     </div>
   </div>
 </div>
+<script>
+  function togglePassword(el) {
+    const input = el.parentElement.querySelector('input');
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      el.innerHTML = '<i class="bi bi-eye-slash"></i>';
+    } else {
+      input.type = 'password';
+      el.innerHTML = '<i class="bi bi-eye"></i>';
+    }
+  }
+</script>
 {% endblock %}

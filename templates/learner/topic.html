@@ -3,14 +3,19 @@
 {% block title %}{{ topic.name }} - {{ subject.name }} - JHS Training Portal{% endblock %}
 
 {% block content %}
-<!-- Breadcrumb -->
-<nav aria-label="breadcrumb" class="mb-3">
-  <ol class="breadcrumb mb-0">
-    <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'subject_detail' subject.slug %}">{{ subject.name }}</a></li>
-    <li class="breadcrumb-item active" aria-current="page">{{ topic.name }}</li>
-  </ol>
-</nav>
+<!-- Breadcrumb & Navigation -->
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <a href="{% url 'subject_detail' subject.slug %}" class="btn btn-sm btn-outline-secondary text-nowrap">
+    <i class="bi bi-arrow-left me-1"></i> Back
+  </a>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'subject_detail' subject.slug %}">{{ subject.name }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ topic.name }}</li>
+    </ol>
+  </nav>
+</div>
 
 <div class="row g-4">
   <div class="col-lg-8">
@@ -26,34 +31,47 @@
 
         <!-- Topic Summary -->
         <div class="p-3 bg-light rounded-3 border-start border-4 border-primary mb-4">
-          <h6 class="fw-bold text-primary mb-1"><i class="bi bi-info-circle me-1"></i> Topic Summary</h6>
+          <h6 class="fw-semibold text-primary mb-1"><i class="bi bi-info-circle me-1"></i> Topic Summary</h6>
           <p class="text-dark mb-0 leading-relaxed">{{ topic.summary }}</p>
         </div>
 
         <!-- Video Tutorials -->
         {% if videos %}
         <div class="mb-4">
-          <h5 class="fw-bold text-dark mb-3"><i class="bi bi-play-btn-fill text-danger me-2"></i> Video Tutorials</h5>
+          <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-play-btn-fill text-danger me-2"></i> Video Tutorials</h5>
           <div class="row g-3">
             {% for video in videos %}
             <div class="col-12">
-              <div class="border rounded p-3 bg-white d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
-                <div>
-                  <div class="fw-bold text-dark mb-1">
-                    <i class="bi bi-file-earmark-play me-2 text-primary"></i> {{ video.title }}
+              <div class="border rounded p-3 bg-white">
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+                  <div>
+                    <div class="fw-medium text-dark mb-1">
+                      <i class="bi bi-file-earmark-play me-2 text-primary"></i> {{ video.title }}
+                    </div>
+                    {% if video.description %}
+                      <p class="text-muted small mb-1">{{ video.description }}</p>
+                    {% endif %}
+                    {% if video.duration %}
+                      <span class="badge bg-light text-secondary border small">
+                        <i class="bi bi-clock me-1"></i> Duration: {{ video.duration }}
+                      </span>
+                    {% endif %}
                   </div>
-                  {% if video.description %}
-                    <p class="text-muted small mb-1">{{ video.description }}</p>
-                  {% endif %}
-                  {% if video.duration %}
-                    <span class="badge bg-light text-secondary border small">
-                      <i class="bi bi-clock me-1"></i> Duration: {{ video.duration }}
-                    </span>
+                  
+                  {% if 'youtube.com' in video.url or 'youtu.be' in video.url %}
+                  <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" id="toggle-btn-{{ video.id }}" onclick="toggleYouTubePlayer('{{ video.id }}', '{{ video.url|escapejs }}')" aria-expanded="false" aria-controls="video-container-{{ video.id }}">
+                    <i class="bi bi-play-circle me-1" id="toggle-icon-{{ video.id }}"></i> <span id="toggle-text-{{ video.id }}">Watch Video</span>
+                  </button>
+                  {% else %}
+                  <a href="{{ video.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary text-nowrap">
+                    <i class="bi bi-play-circle me-1"></i> Watch Video
+                  </a>
                   {% endif %}
                 </div>
-                <a href="{{ video.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary text-nowrap">
-                  <i class="bi bi-play-circle me-1"></i> Watch Video
-                </a>
+                
+                {% if 'youtube.com' in video.url or 'youtu.be' in video.url %}
+                <div id="video-container-{{ video.id }}" class="mt-3 d-none"></div>
+                {% endif %}
               </div>
             </div>
             {% endfor %}
@@ -64,7 +82,7 @@
         <!-- Dynamic Learning Materials -->
         {% if resources %}
         <div class="mb-4">
-          <h5 class="fw-bold text-dark mb-3"><i class="bi bi-folder-fill text-primary me-2"></i> Learning Materials</h5>
+          <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-folder-fill text-primary me-2"></i> Learning Materials</h5>
           <div class="row g-3">
             {% for res in resources %}
             <div class="col-12">
@@ -79,7 +97,7 @@
                     {% else %}<i class="bi bi-file-earmark-text-fill text-secondary"></i>{% endif %}
                   </div>
                   <div>
-                    <div class="fw-bold text-dark mb-1">{{ res.title }}</div>
+                    <div class="fw-medium text-dark mb-1">{{ res.title }}</div>
                     {% if res.description %}
                       <p class="text-muted small mb-1">{{ res.description }}</p>
                     {% endif %}
@@ -106,7 +124,7 @@
     {% if topic.assessment_required %}
     <div class="card bg-white border-0 shadow-sm mb-4">
       <div class="card-body p-4" id="quiz-container">
-        <h5 class="fw-bold text-dark mb-2"><i class="bi bi-patch-question-fill text-warning me-2"></i> Topic Assessment</h5>
+        <h5 class="fw-semibold text-dark mb-2"><i class="bi bi-patch-question-fill text-warning me-2"></i> Topic Assessment</h5>
         <p class="text-muted small mb-3">
           Required passing score: <strong>{{ effective_passing_score }}%</strong>
         </p>
@@ -132,14 +150,14 @@
     {% if attempts_data %}
     <div class="card bg-white border-0 shadow-sm mb-4">
       <div class="card-body p-4">
-        <h6 class="fw-bold text-dark mb-3"><i class="bi bi-history me-1"></i> Attempt History</h6>
+        <h6 class="fw-semibold text-dark mb-3"><i class="bi bi-history me-1"></i> Attempt History</h6>
         <div class="table-responsive">
           <table class="table table-sm text-center align-middle mb-0">
             <thead class="table-light small">
               <tr>
-                <th>Attempt</th>
-                <th>Score</th>
-                <th>Result</th>
+                <th class="fw-semibold">Attempt</th>
+                <th class="fw-semibold">Score</th>
+                <th class="fw-semibold">Result</th>
               </tr>
             </thead>
             <tbody>
@@ -179,11 +197,11 @@
       <div class="card-body p-3 text-center">
         <span class="text-muted small d-block mb-1">Next Topic in {{ subject.name }}</span>
         {% if next_topic_unlocked %}
-        <a href="{% url 'topic_detail' subject.slug next_topic.id %}" class="fw-bold text-primary text-decoration-none">
+        <a href="{% url 'topic_detail' subject.slug next_topic.id %}" class="fw-semibold text-primary text-decoration-none">
           {{ next_topic.name }} <i class="bi bi-arrow-right"></i>
         </a>
         {% else %}
-        <div class="fw-bold text-muted opacity-75">
+        <div class="fw-semibold text-muted opacity-75">
           <i class="bi bi-lock-fill"></i> {{ next_topic.name }}
           <div class="small fw-normal mt-1">Complete this topic to unlock</div>
         </div>
@@ -193,4 +211,76 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleYouTubePlayer(videoId, rawUrl) {
+    const container = document.getElementById('video-container-' + videoId);
+    const btnText = document.getElementById('toggle-text-' + videoId);
+    const btn = document.getElementById('toggle-btn-' + videoId);
+    const icon = document.getElementById('toggle-icon-' + videoId);
+    
+    if (container.classList.contains('d-none')) {
+        // Show video
+        if (!container.querySelector('iframe')) {
+            let embedUrl = getYouTubeEmbedUrl(rawUrl);
+            if (!embedUrl) {
+                window.open(rawUrl, '_blank');
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="ratio ratio-16x9 rounded overflow-hidden shadow-sm">
+                    <iframe src="${embedUrl}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+                </div>
+            `;
+        }
+        
+        container.classList.remove('d-none');
+        btn.setAttribute('aria-expanded', 'true');
+        btnText.innerText = 'Hide Video';
+        btn.classList.replace('btn-outline-primary', 'btn-outline-secondary');
+        icon.classList.replace('bi-play-circle', 'bi-chevron-up');
+    } else {
+        // Hide video
+        container.classList.add('d-none');
+        btn.setAttribute('aria-expanded', 'false');
+        btnText.innerText = 'Watch Video';
+        btn.classList.replace('btn-outline-secondary', 'btn-outline-primary');
+        icon.classList.replace('bi-chevron-up', 'bi-play-circle');
+    }
+}
+
+function getYouTubeEmbedUrl(url) {
+    try {
+        let urlObj = new URL(url);
+        let videoId = null;
+        let isPlaylist = false;
+        
+        if (urlObj.hostname === 'youtu.be') {
+            videoId = urlObj.pathname.substring(1);
+        } else if (urlObj.hostname.includes('youtube.com') || urlObj.hostname.includes('youtube-nocookie.com')) {
+            if (urlObj.pathname === '/watch') {
+                videoId = urlObj.searchParams.get('v');
+            } else if (urlObj.pathname === '/playlist') {
+                videoId = urlObj.searchParams.get('list');
+                isPlaylist = true;
+            } else if (urlObj.pathname.startsWith('/embed/')) {
+                return url.replace('youtube.com', 'youtube-nocookie.com'); 
+            }
+        }
+        
+        if (videoId) {
+            if (isPlaylist) {
+                return `https://www.youtube-nocookie.com/embed/videoseries?list=${videoId}`;
+            }
+            return `https://www.youtube-nocookie.com/embed/${videoId}`;
+        }
+    } catch (e) {
+        console.error("Invalid URL:", url);
+    }
+    return null;
+}
+</script>
 {% endblock %}

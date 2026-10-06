@@ -113,8 +113,8 @@ class QuizOverviewFilterTests(TestCase):
     def test_existing_quiz_metadata_remains_correct(self):
         from quizzes.models import Question
         # Add questions to Topic 1.1 to verify count and readiness
-        Question.objects.create(topic=self.topic1_1, text="Q1", order=1)
-        Question.objects.create(topic=self.topic1_1, text="Q2", order=2)
+        Question.objects.create(required=False, topic=self.topic1_1, text="Q1", order=1)
+        Question.objects.create(required=False, topic=self.topic1_1, text="Q2", order=2)
         
         response = self.client.get(self.url, {'subject_id': self.subject1.id, 'topic_id': self.topic1_1.id})
         quiz_data = response.context['quiz_data']
@@ -127,7 +127,10 @@ class QuizOverviewFilterTests(TestCase):
         
         # Add 3 more questions
         for i in range(3):
-            Question.objects.create(topic=self.topic1_1, text=f"Q_extra_{i}", order=3+i)
+            Question.objects.create(required=False, topic=self.topic1_1, text=f"Q_extra_{i}", order=3+i)
+            
+        # Add an inactive historical version
+        Question.objects.create(required=False, topic=self.topic1_1, text="Q_archived", order=6, is_active=False)
             
         response = self.client.get(self.url, {'subject_id': self.subject1.id, 'topic_id': self.topic1_1.id})
         quiz_data = response.context['quiz_data']

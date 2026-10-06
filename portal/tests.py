@@ -40,6 +40,11 @@ class PortalTests(TestCase):
 
         self.client = Client()
 
+    def test_unauthenticated_cannot_access_portal(self):
+        response = self.client.get(reverse('portal_subjects_list'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('login'), response.url)
+
     def test_learner_cannot_access_portal(self):
         self.client.login(username='portallearner', password='password123')
         response = self.client.get(reverse('portal_subjects_list'))

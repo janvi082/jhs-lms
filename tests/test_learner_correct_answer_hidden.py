@@ -98,8 +98,8 @@ class LearnerCorrectAnswerHiddenTests(TestCase):
     def test_historical_order_preserved_after_question_reorder(self):
         # Create additional questions to establish a sequence: Q1, Q2, Q3
         # self.question is already order=1 (let's call it Q_A)
-        q_b = Question.objects.create(topic=self.topic, text='Q_B', question_type=Question.TYPE_PARAGRAPH, order=2)
-        q_c = Question.objects.create(topic=self.topic, text='Q_C', question_type=Question.TYPE_PARAGRAPH, order=3)
+        q_b = Question.objects.create(required=False, topic=self.topic, text='Q_B', question_type=Question.TYPE_PARAGRAPH, order=2)
+        q_c = Question.objects.create(required=False, topic=self.topic, text='Q_C', question_type=Question.TYPE_PARAGRAPH, order=3)
         
         # Learner submits attempt with the current order: Q_A, Q_B, Q_C
         attempt, _ = submit_quiz_attempt(self.learner, self.topic, {

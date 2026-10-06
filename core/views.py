@@ -60,9 +60,14 @@ def subject_detail(request, slug):
     else:
         active_topics = all_active_topics
     
+    from progress.services import annotate_progress_with_review_status
+    
+    base_qs = TopicProgress.objects.filter(user=request.user, topic__in=active_topics)
+    annotated_qs = annotate_progress_with_review_status(base_qs)
+    
     user_progresses = {
         p.topic_id: p 
-        for p in TopicProgress.objects.filter(user=request.user, topic__in=active_topics)
+        for p in annotated_qs
     }
     
     topics_data = []
@@ -73,7 +78,7 @@ def subject_detail(request, slug):
             'topic': topic,
             'progress': prog,
             'display_status': display_status,
-            'best_score': prog.best_score if prog and prog.attempts_count > 0 else None,
+            'best_score': prog.best_score if prog and prog.attempts_count > 0 and getattr(prog, 'has_finalized_score', True) else None,
             'is_ready': topic.is_assessment_ready(),
             'is_unlocked': is_topic_unlocked(request.user, topic),
         })
@@ -116,12 +121,18 @@ def topic_detail(request, slug, topic_id):
         requires_review = a.responses.filter(is_correct__isnull=True).exists()
         # Number of graded responses (is_correct not null)
         graded_count = a.responses.filter(is_correct__isnull=False).count()
-        # Show numeric score only if at least one response is graded
-        display_score = a.score if graded_count > 0 else None
+        # Is it a legacy attempt without individual response records?
+        is_legacy = not a.responses.exists()
+        
+        # Determine if we should show the score
+        is_graded = (graded_count > 0) or is_legacy
+        
+        display_score = a.score if (is_graded and a.score is not None) else None
+        
         attempts_data.append({
             'attempt': a,
             'requires_review': requires_review,
-            'graded': graded_count > 0,
+            'graded': is_graded and display_score is not None,
             'display_score': display_score,
         })
     
@@ -142,7 +153,7 @@ def topic_detail(request, slug, topic_id):
         'next_topic_unlocked': is_topic_unlocked(request.user, next_topic) if next_topic else False,
         'effective_passing_score': topic.effective_passing_score,
         'required_question_count': site_config.default_required_question_count,
-        'question_count': topic.questions.count(),
+        'question_count': topic.questions.filter(is_active=True).count(),
         'is_assessment_ready': topic.is_assessment_ready(),
     }
     return render(request, 'learner/topic.html', context)

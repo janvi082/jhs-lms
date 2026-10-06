@@ -42,7 +42,7 @@ class QuizSubmissionFlowTests(TestCase):
                 topic=self.topic,
                 text=f"Question {i}",
                 question_type=Question.TYPE_SINGLE_CHOICE,
-                required=True,
+                required=False,
                 order=i
             )
             c1 = Choice.objects.create(question=q, text=f"Correct Choice {i}", is_correct=True)
@@ -63,6 +63,7 @@ class QuizSubmissionFlowTests(TestCase):
     def test_quiz_post_creates_attempt_and_redirects_to_result_page(self):
         post_data = {str(q.id): corr.id for q, corr, wrong in self.questions}
         
+        self.client.get(self.quiz_url)
         response = self.client.post(self.quiz_url, post_data)
         self.assertEqual(response.status_code, 302)
         
@@ -90,6 +91,7 @@ class QuizSubmissionFlowTests(TestCase):
 
     def test_refreshing_result_page_does_not_create_duplicate_attempt(self):
         post_data = {str(q.id): corr.id for q, corr, wrong in self.questions}
+        self.client.get(self.quiz_url)
         response = self.client.post(self.quiz_url, post_data)
         result_url = response.url
 
@@ -99,7 +101,55 @@ class QuizSubmissionFlowTests(TestCase):
         self.client.get(result_url)
         self.assertEqual(QuizAttempt.objects.count(), 1)
 
+    def test_skipped_count_calculation_and_display(self):
+        # 1. Fully answered attempt
+        post_data_full = {str(q.id): corr.id for q, corr, wrong in self.questions}
+        self.client.get(self.quiz_url)
+        res_full = self.client.post(self.quiz_url, post_data_full, follow=True)
+        self.assertEqual(res_full.context['skipped_count'], 0)
+        self.assertContains(res_full, '<div class="fw-bold fs-5">0</div>')
+        
+        # Reset attempts
+        QuizAttempt.objects.all().delete()
+        
+        # 2. Partially answered attempt (answer 2, skip 3)
+        post_data_partial = {
+            str(self.questions[0][0].id): self.questions[0][1].id,
+            str(self.questions[1][0].id): self.questions[1][2].id,
+        }
+        self.client.get(self.quiz_url)
+        res_partial = self.client.post(self.quiz_url, post_data_partial, follow=True)
+        self.assertEqual(res_partial.context['skipped_count'], 3)
+        self.assertContains(res_partial, '<div class="fw-bold fs-5">3</div>')
+        
+        # Reset
+        QuizAttempt.objects.all().delete()
+        
+        # 3. Fully blank attempt
+        self.client.get(self.quiz_url)
+        res_blank = self.client.post(self.quiz_url, {}, follow=True)
+        self.assertEqual(res_blank.context['skipped_count'], 5)
+        self.assertContains(res_blank, '<div class="fw-bold fs-5">5</div>')
+        
+        # Reset
+        QuizAttempt.objects.all().delete()
+        
+        # 4. Optional paragraph question
+        q_para = Question.objects.create(
+            topic=self.topic,
+            text="Paragraph Question",
+            question_type=Question.TYPE_PARAGRAPH,
+            required=False,
+            order=6
+        )
+        self.client.get(self.quiz_url)
+        res_para = self.client.post(self.quiz_url, post_data_full, follow=True)
+        # We answered 5, left 1 optional paragraph blank. So 1 skipped.
+        self.assertEqual(res_para.context['skipped_count'], 1)
+        self.assertContains(res_para, '<div class="fw-bold fs-5">1</div>')
+
     def test_empty_post_handled_safely(self):
+        self.client.get(self.quiz_url)
         response = self.client.post(self.quiz_url, {})
         self.assertEqual(response.status_code, 302)
         attempt = QuizAttempt.objects.first()
@@ -117,14 +167,14 @@ class QuestionTypesAndGradingTests(TestCase):
 
         # 1. Single Choice
         self.q_single = Question.objects.create(
-            topic=self.topic, text="What is 2+2?", question_type=Question.TYPE_SINGLE_CHOICE, order=1
+            topic=self.topic, text="What is 2+2?", question_type=Question.TYPE_SINGLE_CHOICE, required=False, order=1
         )
         self.c_single_correct = Choice.objects.create(question=self.q_single, text="4", is_correct=True)
         self.c_single_wrong = Choice.objects.create(question=self.q_single, text="5", is_correct=False)
 
         # 2. Multiple Choice
         self.q_multi = Question.objects.create(
-            topic=self.topic, text="Which are accounting standards?", question_type=Question.TYPE_MULTIPLE_CHOICE, order=2
+            topic=self.topic, text="Which are accounting standards?", question_type=Question.TYPE_MULTIPLE_CHOICE, required=False, order=2
         )
         self.c_multi_c1 = Choice.objects.create(question=self.q_multi, text="IFRS", is_correct=True)
         self.c_multi_c2 = Choice.objects.create(question=self.q_multi, text="GAAP", is_correct=True)
@@ -132,7 +182,7 @@ class QuestionTypesAndGradingTests(TestCase):
 
         # 3. True / False
         self.q_tf = Question.objects.create(
-            topic=self.topic, text="Assets = Liabilities + Equity", question_type=Question.TYPE_TRUE_FALSE, order=3
+            topic=self.topic, text="Assets = Liabilities + Equity", question_type=Question.TYPE_TRUE_FALSE, required=False, order=3
         )
         self.c_tf_true = Choice.objects.create(question=self.q_tf, text="True", is_correct=True)
         self.c_tf_false = Choice.objects.create(question=self.q_tf, text="False", is_correct=False)
@@ -143,7 +193,7 @@ class QuestionTypesAndGradingTests(TestCase):
             text="What is the full form of VAT?",
             question_type=Question.TYPE_SHORT_ANSWER,
             accepted_answers="Value Added Tax\nVAT\nvalue-added tax",
-            order=4
+            required=False, order=4
         )
 
         # 5. Paragraph
@@ -151,7 +201,7 @@ class QuestionTypesAndGradingTests(TestCase):
             topic=self.topic,
             text="Explain current vs non-current assets.",
             question_type=Question.TYPE_PARAGRAPH,
-            order=5
+            required=False, order=5
         )
 
     def test_single_choice_grading(self):

@@ -3,14 +3,19 @@
 {% block title %}{{ topic.name }} Assessment - {{ subject.name }} - JHS Training Portal{% endblock %}
 
 {% block content %}
-<nav aria-label="breadcrumb" class="mb-3">
-  <ol class="breadcrumb mb-0">
-    <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'subject_detail' subject.slug %}">{{ subject.name }}</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'topic_detail' subject.slug topic.id %}">{{ topic.name }}</a></li>
-    <li class="breadcrumb-item active" aria-current="page">Assessment</li>
-  </ol>
-</nav>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <a href="{% url 'topic_detail' subject.slug topic.id %}" class="btn btn-sm btn-outline-secondary text-nowrap">
+    <i class="bi bi-arrow-left me-1"></i> Back
+  </a>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="{% url 'learner_dashboard' %}">My Learning</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'subject_detail' subject.slug %}">{{ subject.name }}</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'topic_detail' subject.slug topic.id %}">{{ topic.name }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Assessment</li>
+    </ol>
+  </nav>
+</div>
 
 <div class="row justify-content-center">
   <div class="col-lg-8">
@@ -20,12 +25,23 @@
         <span class="badge bg-primary-subtle text-primary border px-3 py-2 fs-6">Passing Score: {{ effective_passing_score }}%</span>
       </div>
       <div class="card-body p-4">
-        <form method="post" action="{% url 'quiz_modal' subject.slug topic.id %}">
+        <form method="post" action="{% url 'quiz_modal' subject.slug topic.id %}" id="quizForm">
           {% csrf_token %}
+
+          {% if messages %}
+            {% for message in messages %}
+              <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} mb-4">
+                {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
 
           <div class="questions-list mb-4">
             {% for question in questions %}
-            <div class="mb-4 p-3 bg-light rounded border">
+            <div class="mb-4 p-3 bg-light rounded border question-container"
+                 data-question-type="{{ question.question_type }}" 
+                 data-required="{{ question.required|yesno:'true,false' }}"
+                 data-question-id="{{ question.id }}">
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <p class="fw-semibold text-dark mb-0">
                   Question {{ forloop.counter }}: {{ question.text }}
@@ -100,4 +116,81 @@
     </div>
   </div>
 </div>
+
+{% if submitted_data_json %}
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    try {
+      const submittedData = {{ submitted_data_json|safe }};
+      for (const [key, values] of Object.entries(submittedData)) {
+        if (key === 'csrfmiddlewaretoken') continue;
+        
+        values.forEach(val => {
+          // Check checkboxes and radio buttons
+          const inputs = document.querySelectorAll(`input[name="${key}"][value="${val}"]`);
+          inputs.forEach(input => {
+            if (input.type === 'checkbox' || input.type === 'radio') {
+              input.checked = true;
+            }
+          });
+          
+          // Fill text inputs and textareas
+          const textInputs = document.querySelectorAll(`input[type="text"][name="${key}"], textarea[name="${key}"]`);
+          textInputs.forEach(input => {
+            input.value = val;
+          });
+        });
+      }
+    } catch (e) {
+      console.error("Error pre-filling submitted data:", e);
+    }
+  });
+</script>
+{% endif %}
+
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const form = document.getElementById("quizForm");
+    if (!form) return;
+    
+    form.addEventListener("submit", function(e) {
+      let valid = true;
+      let firstErrorField = null;
+      
+      const containers = form.querySelectorAll(".question-container[data-required='true']");
+      containers.forEach(container => {
+        const qType = container.getAttribute("data-question-type");
+        const qId = container.getAttribute("data-question-id");
+        
+        if (qType === "multiple") {
+          const checked = container.querySelectorAll(`input[type="checkbox"][name="${qId}"]:checked`);
+          if (checked.length === 0) {
+            valid = false;
+            if (!firstErrorField) firstErrorField = container;
+            container.classList.add("border-danger");
+          } else {
+            container.classList.remove("border-danger");
+          }
+        } else if (qType === "short_answer" || qType === "paragraph") {
+          const textInput = container.querySelector(`[name="${qId}"]`);
+          if (textInput && textInput.value.trim() === "") {
+            valid = false;
+            if (!firstErrorField) firstErrorField = textInput;
+            textInput.classList.add("is-invalid");
+          } else if (textInput) {
+            textInput.classList.remove("is-invalid");
+          }
+        }
+      });
+      
+      if (!valid) {
+        e.preventDefault();
+        alert("Please answer all required questions.");
+        if (firstErrorField) {
+          firstErrorField.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    });
+  });
+</script>
 {% endblock %}

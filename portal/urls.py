@@ -30,6 +30,7 @@ urlpatterns = [
     # Questions & Choices
     path('topics/<int:topic_id>/questions/', views.portal_questions_manage, name='portal_questions_manage'),
     path('topics/<int:topic_id>/questions/add/', views.portal_question_add, name='portal_question_add'),
+    path('questions/<int:question_id>/edit/', views.portal_question_edit, name='portal_question_edit'),
     path('questions/<int:question_id>/delete/', views.portal_question_delete, name='portal_question_delete'),
     path('questions/reorder/', views.portal_questions_reorder, name='portal_questions_reorder'),
     # Admin attempt history

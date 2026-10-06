@@ -13,7 +13,7 @@ class RepairTopicProgressTests(TestCase):
         self.learner = User.objects.create_user(username='learner1', password='pw', role='learner')
         self.subject = Subject.objects.create(name='Subj', order=1)
         self.topic = Topic.objects.create(subject=self.subject, name='T1', order=1, assessment_required=True, status=Topic.STATUS_PUBLISHED)
-        self.q1 = Question.objects.create(topic=self.topic, text='Q1', question_type=Question.TYPE_PARAGRAPH)
+        self.q1 = Question.objects.create(required=False, topic=self.topic, text='Q1', question_type=Question.TYPE_PARAGRAPH)
 
         config = SiteConfig.get_solo()
         config.default_passing_score = 70
@@ -30,7 +30,7 @@ class RepairTopicProgressTests(TestCase):
         attempt.refresh_from_db()
 
         for i, is_correct in enumerate(responses_data):
-            q = Question.objects.create(topic=self.topic, text=f'Q_{i}', question_type=Question.TYPE_PARAGRAPH)
+            q = Question.objects.create(required=False, topic=self.topic, text=f'Q_{i}', question_type=Question.TYPE_PARAGRAPH)
             QuizResponse.objects.create(
                 attempt=attempt, question=q, is_correct=is_correct, text_response='Ans'
             )
@@ -285,10 +285,10 @@ class RepairOptimizationTests(TestCase):
         cls.topic1 = Topic.objects.create(name='Topic 1', subject=cls.subject, assessment_required=True, order=1)
         cls.topic2 = Topic.objects.create(name='Topic 2', subject=cls.subject, assessment_required=True, order=2)
         
-        cls.q1 = Question.objects.create(topic=cls.topic1, text='Q1')
+        cls.q1 = Question.objects.create(required=False, topic=cls.topic1, text='Q1')
         cls.c1 = Choice.objects.create(question=cls.q1, text='C1', is_correct=True)
         
-        cls.q2 = Question.objects.create(topic=cls.topic2, text='Q2')
+        cls.q2 = Question.objects.create(required=False, topic=cls.topic2, text='Q2')
         cls.c2 = Choice.objects.create(question=cls.q2, text='C2', is_correct=True)
         
         for i in range(5):
@@ -333,7 +333,7 @@ class RepairBehaviorTests(TestCase):
         cls.learner = User.objects.create_user(username='testlearner3', password='password')
         cls.subject = Subject.objects.create(name='Subject 3')
         cls.topic = Topic.objects.create(name='Topic 3', subject=cls.subject, assessment_required=True, order=1)
-        cls.q = Question.objects.create(topic=cls.topic, text='Q1')
+        cls.q = Question.objects.create(required=False, topic=cls.topic, text='Q1')
         cls.c = Choice.objects.create(question=cls.q, text='C1', is_correct=True)
 
     def test_missing_topic_progress_dry_run_and_execute(self):

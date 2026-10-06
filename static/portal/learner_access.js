@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (btnExpandAll) {
         btnExpandAll.addEventListener('click', function() {
-            document.querySelectorAll('.collapse').forEach(collapseEl => {
+            document.querySelectorAll('#hierarchy-container .collapse').forEach(collapseEl => {
                 if(typeof bootstrap !== 'undefined') {
                     const bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl, {toggle: false});
                     bsCollapse.show();
@@ -196,13 +196,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     collapseEl.classList.add('show');
                 }
             });
-            document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(btn => btn.setAttribute('aria-expanded', 'true'));
+            document.querySelectorAll('#hierarchy-container [data-bs-toggle="collapse"]').forEach(btn => btn.setAttribute('aria-expanded', 'true'));
         });
     }
 
     if (btnCollapseAll) {
         btnCollapseAll.addEventListener('click', function() {
-            document.querySelectorAll('.collapse').forEach(collapseEl => {
+            document.querySelectorAll('#hierarchy-container .collapse').forEach(collapseEl => {
                 if(typeof bootstrap !== 'undefined') {
                     const bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl, {toggle: false});
                     bsCollapse.hide();
@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     collapseEl.classList.remove('show');
                 }
             });
-            document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
+            document.querySelectorAll('#hierarchy-container [data-bs-toggle="collapse"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
         });
     }
 

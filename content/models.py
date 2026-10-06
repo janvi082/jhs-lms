@@ -104,8 +104,12 @@ class Topic(models.Model):
     def is_assessment_ready(self):
         required = SiteConfig.get_solo().default_required_question_count
         if required == 0:
-            return self.questions.exists()
-        return self.questions.count() >= required
+            return self.questions.filter(is_active=True).exists()
+        return self.questions.filter(is_active=True).count() >= required
+
+    @property
+    def active_question_count(self):
+        return self.questions.filter(is_active=True).count()
 
 class Video(models.Model):
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='videos')

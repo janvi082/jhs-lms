@@ -85,7 +85,7 @@ class ProgressionServiceTests(TestCase):
     # 13. Best score never decreases after a lower retake.
     def test_best_score_never_decreases(self):
         # We need a question to test quiz submission
-        q = Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SINGLE_CHOICE, text='Q')
+        q = Question.objects.create(required=False, topic=self.topic1, question_type=Question.TYPE_SINGLE_CHOICE, text='Q')
         c_right = Choice.objects.create(question=q, text='Right', is_correct=True)
         c_wrong = Choice.objects.create(question=q, text='Wrong', is_correct=False)
 
@@ -267,7 +267,7 @@ class ProgressionServiceTests(TestCase):
         # 10. Non-assessed Topic with questions also completes when learner visits
         self.topic1.assessment_required = False
         self.topic1.save()
-        Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        Question.objects.create(required=False, topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
         record_topic_view(self.user, self.topic1)
         tp = TopicProgress.objects.get(user=self.user, topic=self.topic1)
         self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
@@ -276,7 +276,7 @@ class ProgressionServiceTests(TestCase):
         # 12. Assessed Topic still requires quiz/pass
         self.topic1.assessment_required = True
         self.topic1.save()
-        Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        Question.objects.create(required=False, topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
         record_topic_view(self.user, self.topic1)
         tp = TopicProgress.objects.get(user=self.user, topic=self.topic1)
         self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
@@ -285,7 +285,7 @@ class ProgressionServiceTests(TestCase):
         # 13. Failed assessed Topic remains incomplete/locked
         self.topic1.assessment_required = True
         self.topic1.save()
-        Question.objects.create(topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
+        Question.objects.create(required=False, topic=self.topic1, question_type=Question.TYPE_SHORT_ANSWER, text='Q')
         class FakePostFail:
             def get(self, key): return 'Wrong'
         submit_quiz_attempt(self.user, self.topic1, FakePostFail())

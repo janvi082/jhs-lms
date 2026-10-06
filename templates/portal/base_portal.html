@@ -1,49 +1,101 @@
 {% extends 'base.html' %}
+{% load static %}
+
+{% block navbar_logo %}
+<a href="{% url 'portal_dashboard' %}">
+  <img src="{% static 'images/jhs_logo1.png' %}"
+       alt="JHS"
+       class="navbar-brand-logo">
+</a>
+{% endblock %}
+
+{% block container_suffix %}-fluid px-md-4{% endblock %}
+{% block container_suffix_messages %}-fluid px-md-4{% endblock %}
+{% block container_suffix_main %}-fluid px-md-4{% endblock %}
+
+{% block messages_container %}
+<div class="flash-area-wrapper w-100 d-flex align-items-center" style="min-height: 38px; padding: 4px 0;">
+  <div class="container-fluid px-md-4 w-100">
+    {% if messages %}
+      {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible shadow-sm mb-0 py-1 px-3 d-flex align-items-center justify-content-between rounded border" role="alert" style="font-size: 0.85rem; line-height: 1; min-height: 28px;">
+        <div class="flex-grow-1 pe-2 m-0">{{ message }}</div>
+        <button type="button" class="btn-close m-0 p-2 flex-shrink-0" data-bs-dismiss="alert" aria-label="Close" style="position: static; font-size: 0.65rem; opacity: 0.7;"></button>
+      </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block main_margin %}mb-4{% endblock %}
+
+{% block navbar_left_controls %}
+<button class="btn btn-light border-0 me-2 d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminSidebar" aria-controls="adminSidebar">
+  <i class="bi bi-list fs-5"></i>
+</button>
+<button class="btn btn-light border-0 me-2 d-none d-lg-block" type="button" id="desktopSidebarToggle">
+  <i class="bi bi-list fs-5"></i>
+</button>
+{% endblock %}
 
 {% block content %}
-<div class="portal-wrapper rounded shadow-sm overflow-hidden bg-white">
+<div class="portal-wrapper rounded shadow-sm bg-white">
   <!-- Portal Sidebar -->
-  <aside class="portal-sidebar">
-    <div class="d-flex align-items-center gap-2 mb-3 px-2">
-      <i class="bi bi-shield-lock-fill text-danger fs-4"></i>
-      <div>
-        <h6 class="fw-bold text-dark mb-0">JHS Admin Portal</h6>
-        <small class="text-muted" style="font-size: 0.7rem;">Management Console</small>
-      </div>
+  <aside class="portal-sidebar offcanvas-lg offcanvas-start" tabindex="-1" id="adminSidebar" aria-labelledby="adminSidebarLabel">
+    <script>
+      if (localStorage.getItem('adminSidebarCollapsed') === 'true') {
+        document.getElementById('adminSidebar').classList.add('collapsed-rail');
+      }
+    </script>
+    <div class="offcanvas-header d-lg-none border-bottom">
+      <h5 class="offcanvas-title fw-bold" id="adminSidebarLabel">Admin Menu</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#adminSidebar" aria-label="Close"></button>
     </div>
+    <div class="offcanvas-body flex-column p-0 p-lg-0 pt-lg-0 w-100">
+      <div class="d-none d-lg-flex align-items-center mb-3 px-2 pt-4" style="gap: 12px;">
+        <a href="{% url 'portal_dashboard' %}" class="sidebar-logo-link text-center d-block">
+          <img src="{% static 'images/jhs_logo1.png' %}" alt="JHS Logo" style="height: 38px; width: auto; object-fit: contain;">
+        </a>
+        <div class="sidebar-brand-text">
+          <h6 class="fw-bold text-dark mb-0">JHS Admin Portal</h6>
+          <small class="text-muted" style="font-size: 0.7rem;">Management Console</small>
+        </div>
+      </div>
 
-    <nav class="nav flex-column">
-      <div class="nav-header">Content</div>
-      <a class="nav-link {% if request.path == '/portal/' or 'subjects' in request.path and 'topics' not in request.path %}active{% endif %}" href="{% url 'portal_subjects_list' %}">
-        <i class="bi bi-book"></i> Subjects
-      </a>
-      <a class="nav-link {% if 'topics' in request.path and 'questions' not in request.path and 'attempts' not in request.path %}active{% endif %}" href="{% url 'portal_topics_list' %}">
-        <i class="bi bi-journal-text"></i> Topics
-      </a>
-      <a class="nav-link {% if 'videos' in request.path %}active{% endif %}" href="{% url 'portal_videos_overview' %}">
-        <i class="bi bi-play-btn"></i> Videos
-      </a>
-      <a class="nav-link {% if 'materials' in request.path %}active{% endif %}" href="{% url 'portal_materials_overview' %}">
-        <i class="bi bi-folder2-open"></i> Materials
-      </a>
-      <a class="nav-link {% if 'quizzes' in request.path or 'question' in request.path %}active{% endif %}" href="{% url 'portal_quizzes_overview' %}">
-        <i class="bi bi-patch-question"></i> Quizzes
-      </a>
+      <nav class="nav flex-column w-100">
+        <div class="nav-header">Content</div>
+        <a class="nav-link {% if request.path == '/portal/' or 'subjects' in request.path and 'topics' not in request.path %}active{% endif %}" href="{% url 'portal_subjects_list' %}" title="Subjects">
+          <i class="bi bi-book"></i> <span class="nav-text">Subjects</span>
+        </a>
+        <a class="nav-link {% if 'topics' in request.path and 'questions' not in request.path and 'attempts' not in request.path %}active{% endif %}" href="{% url 'portal_topics_list' %}" title="Topics">
+          <i class="bi bi-journal-text"></i> <span class="nav-text">Topics</span>
+        </a>
+        <a class="nav-link {% if 'videos' in request.path %}active{% endif %}" href="{% url 'portal_videos_overview' %}" title="Videos">
+          <i class="bi bi-play-btn"></i> <span class="nav-text">Videos</span>
+        </a>
+        <a class="nav-link {% if 'materials' in request.path %}active{% endif %}" href="{% url 'portal_materials_overview' %}" title="Materials">
+          <i class="bi bi-folder2-open"></i> <span class="nav-text">Materials</span>
+        </a>
+        <a class="nav-link {% if 'quizzes' in request.path or 'question' in request.path %}active{% endif %}" href="{% url 'portal_quizzes_overview' %}" title="Quizzes">
+          <i class="bi bi-patch-question"></i> <span class="nav-text">Quizzes</span>
+        </a>
 
 
-      <div class="nav-header">Learners</div>
-      <a class="nav-link {% if 'learners' in request.path and 'progress' not in request.resolver_match.url_name and 'attempt' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'portal_learners_list' %}">
-        <i class="bi bi-people"></i> Learners
-      </a>
-      <a class="nav-link {% if 'progress' in request.resolver_match.url_name or 'attempt' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'portal_progress' %}">
-        <i class="bi bi-graph-up-arrow"></i> Progress
-      </a>
+        <div class="nav-header">Learners</div>
+        <a class="nav-link {% if 'learners' in request.path and 'progress' not in request.resolver_match.url_name and 'attempt' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'portal_learners_list' %}" title="Learners">
+          <i class="bi bi-people"></i> <span class="nav-text">Learners</span>
+        </a>
+        <a class="nav-link {% if 'progress' in request.resolver_match.url_name or 'attempt' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'portal_progress' %}" title="Progress">
+          <i class="bi bi-graph-up-arrow"></i> <span class="nav-text">Progress</span>
+        </a>
 
-      <div class="nav-header">Settings</div>
-      <a class="nav-link {% if 'settings' in request.path %}active{% endif %}" href="{% url 'portal_settings' %}">
-        <i class="bi bi-sliders"></i> LMS Settings
-      </a>
-    </nav>
+        <div class="nav-header">Settings</div>
+        <a class="nav-link {% if 'settings' in request.path %}active{% endif %}" href="{% url 'portal_settings' %}" title="LMS Settings">
+          <i class="bi bi-sliders"></i> <span class="nav-text">LMS Settings</span>
+        </a>
+      </nav>
+    </div>
   </aside>
 
   <!-- Portal Main Content Area -->
@@ -55,6 +107,18 @@
 
 {% block extra_js %}
 {{ block.super }}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const toggleBtn = document.getElementById('desktopSidebarToggle');
+    const sidebar = document.getElementById('adminSidebar');
+    if (toggleBtn && sidebar) {
+      toggleBtn.addEventListener('click', function() {
+        const isCollapsed = sidebar.classList.toggle('collapsed-rail');
+        localStorage.setItem('adminSidebarCollapsed', isCollapsed);
+      });
+    }
+  });
+</script>
 {% if show_modal %}
 <script>
   document.addEventListener('DOMContentLoaded', function() {

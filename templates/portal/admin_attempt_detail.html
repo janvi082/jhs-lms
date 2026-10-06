@@ -1,60 +1,148 @@
 {% extends 'portal/base_portal.html' %}
+{% load tz %}
 
 {% block portal_content %}
-<div class="mb-3 mt-4">
-  <a href="{% url 'portal_progress' %}" class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-arrow-left me-1"></i> Back to Progress
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <a href="{% url 'admin_learner_topic_attempts' learner_id=attempt.user.id topic_id=attempt.topic.id %}" class="btn btn-sm btn-outline-secondary text-nowrap" title="Back to Attempts">
+    <i class="bi bi-arrow-left me-1"></i> <span class="d-none d-md-inline">Back to Attempts</span>
   </a>
+  <nav aria-label="breadcrumb" class="flex-grow-1 mt-2 mt-md-0">
+    <ol class="breadcrumb mb-0" style="font-size: clamp(0.8rem, 0.7rem + 0.5vw, 0.95rem); line-height: 1.5;">
+      <li class="breadcrumb-item"><a href="{% url 'portal_progress' %}">Progress</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'portal_learner_progress_detail' learner_id=attempt.user.id %}">{{ attempt.user.get_full_name|default:attempt.user.username }}</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'admin_learner_topic_attempts' learner_id=attempt.user.id topic_id=attempt.topic.id %}" title="{{ attempt.topic.name }} Attempts">{{ attempt.topic.name }} Attempts</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Attempt #{{ attempt.attempt_number }}</li>
+    </ol>
+  </nav>
 </div>
-<h2 class="mb-3">Quiz Attempt Detail</h2>
-<p><strong>Learner:</strong> {{ attempt.user.get_full_name|default:attempt.user.username }}</p>
-<p><strong>Quiz (Topic):</strong> {{ attempt.topic.name }}</p>
-<p><strong>Attempt #:</strong> {{ attempt.attempt_number }}</p>
-<p><strong>Submitted:</strong> {{ attempt.created_at|date:"Y-m-d H:i" }}</p>
-<p><strong>Score:</strong> {% if display_score is not none %}{{ display_score }}%{% else %}<span class="text-muted">N/A</span>{% endif %}</p>
+<h2 class="mb-3 mt-2">Quiz Attempt Detail</h2>
+<div class="mb-4 bg-white p-3 p-md-4 rounded border shadow-sm" style="font-size: clamp(0.85rem, 0.8rem + 0.3vw, 1rem); line-height: 1.4;">
+  <div class="row g-3" style="max-width: 850px;">
+    <div class="col-12 col-md-4">
+      <span class="text-muted fw-semibold me-1">Learner:</span>
+      <span class="text-dark">{{ attempt.user.get_full_name|default:attempt.user.username }}</span>
+    </div>
+    <div class="col-12 col-md-5">
+      <span class="text-muted fw-semibold me-1">Quiz:</span>
+      <span class="text-dark">{{ attempt.topic.name }}</span>
+    </div>
+    <div class="col-6 col-md-3">
+      <span class="text-muted fw-semibold me-1">Attempt:</span>
+      <span class="text-dark">#{{ attempt.attempt_number }}</span>
+    </div>
+    <div class="col-12 col-md-4">
+      <span class="text-muted fw-semibold me-1">Submitted:</span>
+      <span class="text-dark">{{ attempt.created_at|timezone:"Asia/Kolkata"|date:"y-m-d H:i" }}</span>
+    </div>
+    <div class="col-6 col-md-4">
+      <span class="text-muted fw-semibold me-1">Score:</span>
+      <span class="text-dark">{% if display_score is not none %}<span class="fw-bold">{{ display_score }}%</span>{% else %}<span class="text-muted">N/A</span>{% endif %}</span>
+    </div>
+    <div class="col-6 col-md-4">
+      <span class="text-muted fw-semibold me-1">Skipped:</span>
+      <span class="text-dark">{{ skipped_count }}</span>
+    </div>
+  </div>
+</div>
 
-<table class="table table-hover mt-4">
-  <thead class="table-light">
-    <tr>
-      <th>Question</th>
-      <th>Type</th>
-      <th>Learner Answer</th>
-      <th>Correct Answer</th>
-      <th>Status</th>
-      <th>Review</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for r in responses_data %}
-    <tr>
-      <td>{{ r.question_text }}</td>
-      <td>{{ r.question_type }}</td>
-      <td>{{ r.learner_answer }}</td>
-      <td>{% if r.correct_answer %}{{ r.correct_answer }}{% else %}—{% endif %}</td>
-      <td>
-        {% if r.is_pending %}
-          <span class="badge bg-warning text-dark">Requires Review</span>
-        {% else %}
-          {% if r.response.is_correct %}
-            <span class="badge bg-success">Correct</span>
+<style>
+  /* Responsive compact table styling scoped to this page */
+  .attempt-table th, .attempt-table td {
+    vertical-align: middle;
+  }
+  
+  /* Progressively reduce font size and padding as width decreases */
+  @media (max-width: 991.98px) {
+    .attempt-table th, .attempt-table td {
+      padding: 0.6rem 0.5rem;
+      font-size: 0.95rem;
+    }
+  }
+  @media (max-width: 575.98px) {
+    .attempt-table th, .attempt-table td {
+      padding: 0.4rem 0.3rem;
+      font-size: 0.85rem;
+    }
+    .attempt-table .badge {
+      font-size: 0.75em;
+    }
+    .attempt-table .btn-sm {
+      padding: 0.2rem 0.4rem;
+      font-size: 0.75rem;
+    }
+  }
+  
+  /* Optimize column widths and wrapping */
+  .col-type, .col-status {
+    white-space: nowrap;
+    width: 1%;
+  }
+  .col-review {
+    white-space: nowrap;
+    width: 1%;
+    text-align: right;
+  }
+  .col-question {
+    min-width: 150px;
+    max-width: 300px;
+  }
+  .col-answer {
+    min-width: 120px;
+    max-width: 200px;
+  }
+  .text-break-word {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+</style>
+
+<div class="table-responsive mt-4 rounded border shadow-sm bg-white">
+  <table class="table table-hover mb-0 attempt-table align-middle">
+    <thead class="table-light">
+      <tr>
+        <th class="col-question">Question</th>
+        <th class="col-type">Type</th>
+        <th class="col-answer">Learner Answer</th>
+        <th class="col-answer">Correct Answer</th>
+        <th class="col-status">Status</th>
+        <th class="col-review text-end pe-3">Review</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in responses_data %}
+      <tr>
+        <td class="text-break-word">{{ r.question_text }}</td>
+        <td><span class="badge bg-light text-dark border fw-normal">{{ r.question_type }}</span></td>
+        <td class="text-break-word">{{ r.learner_answer }}</td>
+        <td class="text-break-word">{% if r.correct_answer %}{{ r.correct_answer }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td>
+          {% if r.is_pending %}
+            <span class="badge bg-warning text-dark">Requires Review</span>
           {% else %}
-            <span class="badge bg-danger">Wrong</span>
+            {% if r.response.is_correct %}
+              <span class="badge bg-success">Correct</span>
+            {% else %}
+              <span class="badge bg-danger">Wrong</span>
+            {% endif %}
           {% endif %}
-        {% endif %}
-      </td>
-      <td>
-        {% if r.is_pending %}
-          <form method="post" action="{% url 'admin_attempt_review' attempt_id=attempt.id response_id=r.response.id %}" class="d-inline">
-            {% csrf_token %}
-            <button type="submit" name="action" value="approve" action="approve" class="btn btn-sm btn-success">Approve</button>
-            <button type="submit" name="action" value="reject" action="reject" class="btn btn-sm btn-danger">Reject</button>
-          </form>
-        {% else %}
-          —
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+        </td>
+        <td class="text-end pe-3">
+          {% if r.is_pending %}
+            <form method="post" action="{% url 'admin_attempt_review' attempt_id=attempt.id response_id=r.response.id %}" class="m-0" style="display: contents;">
+              {% csrf_token %}
+              <div class="d-inline-flex gap-1 flex-nowrap">
+                <button type="submit" name="action" value="approve" class="btn btn-sm btn-success text-nowrap">Approve</button>
+                <button type="submit" name="action" value="reject" class="btn btn-sm btn-danger text-nowrap">Reject</button>
+              </div>
+            </form>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

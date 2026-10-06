@@ -231,7 +231,7 @@ def portal_topic_edit(request, topic_id):
     topic = get_object_or_404(Topic, id=topic_id)
     site_config = SiteConfig.get_solo()
     required_count = site_config.default_required_question_count
-    current_question_count = topic.questions.count()
+    current_question_count = topic.active_question_count
     
     if request.method == 'POST':
         form = TopicForm(request.POST, instance=topic)
@@ -244,7 +244,7 @@ def portal_topic_edit(request, topic_id):
                 # Render with modal open, no save
                 videos = topic.videos.all().order_by('order', 'id')
                 resources = topic.resources.all().order_by('order', 'id')
-                questions = topic.questions.all().order_by('order', 'id')
+                questions = topic.questions.filter(is_active=True).order_by('order', 'id')
                 video_form = VideoForm()
                 resource_form = ResourceForm()
                 context = {
@@ -268,7 +268,7 @@ def portal_topic_edit(request, topic_id):
             # Form invalid: render with bound form and errors on the page
             videos = topic.videos.all().order_by('order', 'id')
             resources = topic.resources.all().order_by('order', 'id')
-            questions = topic.questions.all().order_by('order', 'id')
+            questions = topic.questions.filter(is_active=True).order_by('order', 'id')
             video_form = VideoForm()
             resource_form = ResourceForm()
             context = {
@@ -289,7 +289,7 @@ def portal_topic_edit(request, topic_id):
 
     videos = topic.videos.all().order_by('order', 'id')
     resources = topic.resources.all().order_by('order', 'id')
-    questions = topic.questions.all().order_by('order', 'id')
+    questions = topic.questions.filter(is_active=True).order_by('order', 'id')
     
     video_form = VideoForm()
     resource_form = ResourceForm()
@@ -323,7 +323,7 @@ def portal_video_add(request, topic_id):
             return redirect('portal_topic_edit', topic_id=topic.id)
         else:
             site_config = SiteConfig.get_solo()
-            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.all().order_by('order', 'id'), 'video_form': form, 'resource_form': ResourceForm(), 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.questions.count(), 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'video_add'}
+            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.filter(is_active=True).order_by('order', 'id'), 'video_form': form, 'resource_form': ResourceForm(), 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.active_question_count, 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'video_add'}
             return render(request, 'portal/topic_edit.html', context)
 
 @admin_required
@@ -348,7 +348,7 @@ def portal_material_add(request, topic_id):
             return redirect('portal_topic_edit', topic_id=topic.id)
         else:
             site_config = SiteConfig.get_solo()
-            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.all().order_by('order', 'id'), 'video_form': VideoForm(), 'resource_form': form, 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.questions.count(), 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'material_add'}
+            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.filter(is_active=True).order_by('order', 'id'), 'video_form': VideoForm(), 'resource_form': form, 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.active_question_count, 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'material_add'}
             return render(request, 'portal/topic_edit.html', context)
 
 @admin_required
@@ -373,7 +373,7 @@ def portal_video_edit(request, video_id):
         topic = video.topic
         videos = topic.videos.all().order_by('order', 'id')
         resources = topic.resources.all().order_by('order', 'id')
-        questions = topic.questions.all().order_by('order', 'id')
+        questions = topic.questions.filter(is_active=True).order_by('order', 'id')
         video_form = form
         resource_form = ResourceForm()
         context = {
@@ -402,7 +402,7 @@ def portal_material_edit(request, material_id):
         topic = material.topic
         videos = topic.videos.all().order_by('order', 'id')
         resources = topic.resources.all().order_by('order', 'id')
-        questions = topic.questions.all().order_by('order', 'id')
+        questions = topic.questions.filter(is_active=True).order_by('order', 'id')
         video_form = VideoForm()
         resource_form = form
         context = {
@@ -418,18 +418,35 @@ def portal_material_edit(request, material_id):
     else:
         return redirect('portal_topic_edit', topic_id=material.topic_id)
 
-@admin_required
-def portal_questions_manage(request, topic_id):
-    topic = get_object_or_404(Topic, id=topic_id)
-    questions = topic.questions.prefetch_related('choices').all().order_by('order', 'id')
+def get_topic_questions_context(topic):
+    from content.models import SiteConfig
+    from quizzes.models import Question
     site_config = SiteConfig.get_solo()
-    
-    context = {
+    questions = topic.questions.filter(is_active=True).prefetch_related('choices').all().order_by('order', 'id')
+    active_vgroups = set(q.version_group for q in questions if q.version_group)
+    inactive_qs = Question.objects.filter(topic=topic, is_active=False).prefetch_related('choices').order_by('-id')
+    archived_questions = []
+    seen_archived_vgroups = set()
+    for iq in inactive_qs:
+        if iq.version_group:
+            if iq.version_group not in active_vgroups and iq.version_group not in seen_archived_vgroups:
+                archived_questions.append(iq)
+                seen_archived_vgroups.add(iq.version_group)
+        else:
+            archived_questions.append(iq)
+
+    return {
         'topic': topic,
         'questions': questions,
+        'archived_questions': archived_questions,
         'required_question_count': site_config.default_required_question_count,
         'current_count': questions.count(),
     }
+
+@admin_required
+def portal_questions_manage(request, topic_id):
+    topic = get_object_or_404(Topic, id=topic_id)
+    context = get_topic_questions_context(topic)
     return render(request, 'portal/question_edit.html', context)
 
 @admin_required
@@ -446,7 +463,8 @@ def portal_question_add(request, topic_id):
             site_config = SiteConfig.get_solo()
             submitted_data = request.POST.copy()
             submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-            context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+            context = get_topic_questions_context(topic)
+            context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
             return render(request, 'portal/question_edit.html', context)
 
         if question_type == Question.TYPE_SINGLE_CHOICE:
@@ -461,14 +479,16 @@ def portal_question_add(request, topic_id):
                 site_config = SiteConfig.get_solo()
                 submitted_data = request.POST.copy()
                 submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                context = get_topic_questions_context(topic)
+                context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
                 return render(request, 'portal/question_edit.html', context)
             if not correct_index:
                 messages.error(request, "Please mark exactly one choice as the correct answer.")
                 site_config = SiteConfig.get_solo()
                 submitted_data = request.POST.copy()
                 submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                context = get_topic_questions_context(topic)
+                context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
                 return render(request, 'portal/question_edit.html', context)
             try:
                 correct_idx = int(correct_index)
@@ -477,7 +497,8 @@ def portal_question_add(request, topic_id):
                 site_config = SiteConfig.get_solo()
                 submitted_data = request.POST.copy()
                 submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                context = get_topic_questions_context(topic)
+                context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
                 return render(request, 'portal/question_edit.html', context)
 
             with transaction.atomic():
@@ -508,14 +529,16 @@ def portal_question_add(request, topic_id):
                 site_config = SiteConfig.get_solo()
                 submitted_data = request.POST.copy()
                 submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                context = get_topic_questions_context(topic)
+                context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
                 return render(request, 'portal/question_edit.html', context)
             if not correct_indices:
                 messages.error(request, "Please mark at least one choice as a correct answer.")
                 site_config = SiteConfig.get_solo()
                 submitted_data = request.POST.copy()
                 submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                context = get_topic_questions_context(topic)
+                context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
                 return render(request, 'portal/question_edit.html', context)
 
             with transaction.atomic():
@@ -550,7 +573,8 @@ def portal_question_add(request, topic_id):
                 site_config = SiteConfig.get_solo()
                 submitted_data = request.POST.copy()
                 submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-                context = {'topic': topic, 'questions': topic.questions.prefetch_related('choices').all().order_by('order', 'id'), 'required_question_count': site_config.default_required_question_count, 'current_count': topic.questions.count(), 'show_modal': 'addQuestionModal', 'submitted_data': submitted_data}
+                context = get_topic_questions_context(topic)
+                context.update({'show_modal': 'addQuestionModal', 'submitted_data': submitted_data})
                 return render(request, 'portal/question_edit.html', context)
             Question.objects.create(
                 topic=topic,
@@ -572,15 +596,176 @@ def portal_question_add(request, topic_id):
     return redirect('portal_questions_manage', topic_id=topic.id)
 
 @admin_required
+def portal_question_edit(request, question_id):
+    question = get_object_or_404(Question, id=question_id)
+    topic = question.topic
+    topic_id = topic.id
+
+    if request.method == 'POST':
+        if not question.is_active:
+            messages.error(request, 'This question is already retired and cannot be edited.')
+            return redirect('portal_questions_manage', topic_id=topic_id)
+
+        question_text = request.POST.get('question_text', '').strip()
+        question_type = request.POST.get('question_type', Question.TYPE_SINGLE_CHOICE)
+        is_required = request.POST.get('required') in ('true', 'True', 'on', '1') or 'required' in request.POST
+        accepted_answers = request.POST.get('accepted_answers', '').strip()
+        
+        def render_error(msg):
+            messages.error(request, msg)
+            submitted_data = request.POST.copy()
+            submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
+            
+            context = get_topic_questions_context(topic)
+            context.update({
+                'editing_question_id': question.id,
+                'show_modal': f'editQuestionModal_{question.id}',
+                'submitted_data': submitted_data
+            })
+            return render(request, 'portal/question_edit.html', context)
+
+        if not question_text:
+            return render_error('Question text cannot be empty.')
+
+        # Validation blocks
+        choice_texts = []
+        correct_indices = []
+        correct_idx = None
+        tf_correct = None
+
+        if question_type == Question.TYPE_SINGLE_CHOICE:
+            valid_indexes = [i for i in range(1, 7) if request.POST.get(f'choice_{i}', '').strip()]
+            choice_texts = [(i, request.POST.get(f'choice_{i}', '').strip()) for i in valid_indexes]
+            correct_index = request.POST.get('correct_choice')
+            if len(choice_texts) < 2:
+                return render_error('Single Choice questions must have at least 2 answer choices.')
+            if not correct_index or not correct_index.isdigit() or int(correct_index) not in valid_indexes:
+                return render_error('Please mark exactly one valid choice as the correct answer.')
+            correct_idx = int(correct_index)
+
+        elif question_type == Question.TYPE_MULTIPLE_CHOICE:
+            valid_indexes = [i for i in range(1, 7) if request.POST.get(f'choice_{i}', '').strip()]
+            choice_texts = [(i, request.POST.get(f'choice_{i}', '').strip()) for i in valid_indexes]
+            correct_indices = [int(i) for i in request.POST.getlist('correct_choices') if i.isdigit()]
+            if len(choice_texts) < 2:
+                return render_error('Multiple Choice questions must have at least 2 answer choices.')
+            if not correct_indices or not all(i in valid_indexes for i in correct_indices):
+                return render_error('Please mark at least one valid choice as a correct answer.')
+
+        elif question_type == Question.TYPE_TRUE_FALSE:
+            tf_correct = request.POST.get('tf_correct', 'true').lower()
+
+        elif question_type == Question.TYPE_SHORT_ANSWER:
+            if not accepted_answers:
+                return render_error('Short Answer questions require at least one accepted answer.')
+
+        with transaction.atomic():
+            question = Question.objects.select_for_update().get(id=question_id)
+            current_question_used = QuizResponse.objects.filter(question=question).exists()
+
+            if current_question_used:
+                question.is_active = False
+                question.save(update_fields=['is_active'])
+                
+                new_question = Question.objects.create(
+                    topic=topic,
+                    text=question_text,
+                    question_type=question_type,
+                    required=is_required,
+                    accepted_answers=accepted_answers if question_type == Question.TYPE_SHORT_ANSWER else '',
+                    version_group=question.version_group,
+                    order=question.order
+                )
+                messages.success(request, 'Question edited. A new version was created to preserve historical attempts.')
+                
+                # Create choices for new question
+                if question_type == Question.TYPE_SINGLE_CHOICE:
+                    for idx, c_text in choice_texts:
+                        Choice.objects.create(question=new_question, text=c_text, is_correct=(idx == correct_idx))
+                elif question_type == Question.TYPE_MULTIPLE_CHOICE:
+                    for idx, c_text in choice_texts:
+                        Choice.objects.create(question=new_question, text=c_text, is_correct=(idx in correct_indices))
+                elif question_type == Question.TYPE_TRUE_FALSE:
+                    Choice.objects.create(question=new_question, text='True', is_correct=(tf_correct == 'true'))
+                    Choice.objects.create(question=new_question, text='False', is_correct=(tf_correct == 'false'))
+                    
+            else:
+                new_question = question
+                new_question.text = question_text
+                new_question.question_type = question_type
+                new_question.required = is_required
+                new_question.accepted_answers = accepted_answers if question_type == Question.TYPE_SHORT_ANSWER else ''
+                new_question.save()
+                messages.success(request, 'Question updated successfully.')
+                
+                existing_choices = {str(c.id): c for c in new_question.choices.all()}
+                
+                if question_type == Question.TYPE_SINGLE_CHOICE or question_type == Question.TYPE_MULTIPLE_CHOICE:
+                    submitted_choice_ids = []
+                    for i in range(1, 7):
+                        c_text = request.POST.get(f'choice_{i}', '').strip()
+                        if not c_text:
+                            continue
+                        c_id = request.POST.get(f'choice_id_{i}')
+                        is_correct = (i == correct_idx) if question_type == Question.TYPE_SINGLE_CHOICE else (i in correct_indices)
+                        
+                        if c_id and c_id in existing_choices:
+                            c = existing_choices.pop(c_id)
+                            c.text = c_text
+                            c.is_correct = is_correct
+                            c.save()
+                        else:
+                            Choice.objects.create(question=new_question, text=c_text, is_correct=is_correct)
+                            
+                    # Delete any remaining choices that were removed by the admin
+                    for c in existing_choices.values():
+                        c.delete()
+                        
+                elif question_type == Question.TYPE_TRUE_FALSE:
+                    # Update true/false existing choices or recreate if not exact match
+                    if len(existing_choices) == 2:
+                        choices_list = list(existing_choices.values())
+                        for c in choices_list:
+                            if c.text == 'True':
+                                c.is_correct = (tf_correct == 'true')
+                                c.save()
+                                existing_choices.pop(str(c.id))
+                            elif c.text == 'False':
+                                c.is_correct = (tf_correct == 'false')
+                                c.save()
+                                existing_choices.pop(str(c.id))
+                    
+                    if existing_choices: # If format was weird, just wipe and recreate
+                        new_question.choices.all().delete()
+                        Choice.objects.create(question=new_question, text='True', is_correct=(tf_correct == 'true'))
+                        Choice.objects.create(question=new_question, text='False', is_correct=(tf_correct == 'false'))
+                        
+                elif question_type in [Question.TYPE_SHORT_ANSWER, Question.TYPE_PARAGRAPH]:
+                    new_question.choices.all().delete()
+
+    return redirect('portal_questions_manage', topic_id=topic_id)
+
+@admin_required
 def portal_question_delete(request, question_id):
     question = get_object_or_404(Question, id=question_id)
     topic_id = question.topic_id
     if request.method == 'POST':
-        try:
-            question.delete()
-            messages.success(request, "Question deleted successfully.")
-        except ProtectedError:
-            messages.error(request, "Cannot delete this question because it is referenced by existing quiz attempts.")
+        if not question.is_active:
+            messages.error(request, "This question is already retired.")
+            return redirect('portal_questions_manage', topic_id=topic_id)
+            
+        current_question_used = QuizResponse.objects.filter(question=question).exists()
+        
+        if current_question_used:
+            question.is_active = False
+            question.save(update_fields=['is_active'])
+            messages.success(request, "Question retired to preserve historical attempts.")
+        else:
+            try:
+                question.delete()
+                messages.success(request, "Question permanently deleted.")
+            except ProtectedError:
+                messages.error(request, "Cannot delete this question because it is referenced by existing quiz attempts.")
     return redirect('portal_questions_manage', topic_id=topic_id)
 
 @admin_required
@@ -610,7 +795,7 @@ def portal_questions_reorder(request):
             return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
 
         with transaction.atomic():
-            current_questions = list(Question.objects.filter(topic_id=topic_id).values_list('id', flat=True))
+            current_questions = list(Question.objects.filter(topic_id=topic_id, is_active=True).values_list('id', flat=True))
             
             if len(question_ids) != len(current_questions):
                 return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing questions.'}, status=400)
@@ -872,7 +1057,7 @@ def portal_quizzes_overview(request):
     
     quiz_data = []
     for t in topics_queryset:
-        q_count = t.questions.count()
+        q_count = t.active_question_count
         quiz_data.append({
             'topic': t,
             'question_count': q_count,
@@ -948,12 +1133,14 @@ def admin_attempt_detail(request, attempt_id):
             'is_pending': r.is_correct is None,
         })
     # compute summary for display
+    total_responses = attempt.responses.count()
     gradable = attempt.responses.filter(is_correct__isnull=False).count()
-    display_score = attempt.score if gradable > 0 else None
+    display_score = attempt.score if (gradable > 0 or total_responses == 0) else None
     context = {
         'attempt': attempt,
         'responses_data': resp_data,
         'display_score': display_score,
+        'skipped_count': attempt.total_questions - total_responses,
     }
     return render(request, 'portal/admin_attempt_detail.html', context)
 
@@ -970,8 +1157,9 @@ def admin_learner_topic_attempts(request, learner_id, topic_id):
     attempts_data = []
     for a in attempts:
         requires_review = a.responses.filter(is_correct__isnull=True).exists()
+        total_responses = a.responses.count()
         gradable = a.responses.filter(is_correct__isnull=False).count()
-        display_score = a.score if gradable > 0 else None
+        display_score = a.score if (gradable > 0 or total_responses == 0) else None
         attempts_data.append({
             'attempt': a,
             'requires_review': requires_review,

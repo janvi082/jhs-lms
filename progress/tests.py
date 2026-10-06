@@ -49,7 +49,7 @@ class LMSCoreTests(TestCase):
 
         # Create 5 questions for topic1
         for i in range(1, 6):
-            q = Question.objects.create(topic=self.topic1, text=f"Question {i}", order=i)
+            q = Question.objects.create(required=False, topic=self.topic1, text=f"Question {i}", order=i)
             Choice.objects.create(question=q, text="Option A (Correct)", is_correct=True)
             Choice.objects.create(question=q, text="Option B", is_correct=False)
             Choice.objects.create(question=q, text="Option C", is_correct=False)
@@ -66,7 +66,7 @@ class LMSCoreTests(TestCase):
         # 1. Failed Attempt (1/5 correct = 20%)
         q1 = self.topic1.questions.first()
         wrong_choice = q1.choices.filter(is_correct=False).first()
-        answers_wrong = {q.id: wrong_choice.id for q in self.topic1.questions.all()}
+        answers_wrong = {q.id: wrong_choice.id for q in self.topic1.questions.filter(is_active=True)}
         
         att1, tp1 = submit_quiz_attempt(self.learner, self.topic1, answers_wrong)
         self.assertFalse(att1.passed)
@@ -79,7 +79,7 @@ class LMSCoreTests(TestCase):
 
         # 2. Passed Attempt (5/5 correct = 100%)
         answers_correct = {}
-        for q in self.topic1.questions.all():
+        for q in self.topic1.questions.filter(is_active=True):
             corr = q.choices.get(is_correct=True)
             answers_correct[q.id] = corr.id
 
@@ -94,10 +94,32 @@ class LMSCoreTests(TestCase):
         disp_pass = get_topic_display_status(tp2)
         self.assertEqual(disp_pass['code'], 'completed')
 
+    def test_quiz_submit_saves_effective_passing_score(self):
+        # Create a valid submission payload (100% correct)
+        answers = {q.id: q.choices.get(is_correct=True).id for q in self.topic1.questions.filter(is_active=True)}
+        
+        # 1. Default threshold when neither subject nor topic has an override
+        self.assertEqual(self.site_config.default_passing_score, 75)
+        att1, _ = submit_quiz_attempt(self.learner, self.topic1, answers)
+        self.assertEqual(att1.passing_score_used, 75)
+        self.assertTrue(att1.passed)
+        
+        # 2. Subject override when the topic has no override
+        self.subject.passing_score_override = 80
+        self.subject.save()
+        att2, _ = submit_quiz_attempt(self.learner, self.topic1, answers)
+        self.assertEqual(att2.passing_score_used, 80)
+        
+        # 3. Topic override when both subject and topic overrides are set
+        self.topic1.passing_score_override = 90
+        self.topic1.save()
+        att3, _ = submit_quiz_attempt(self.learner, self.topic1, answers)
+        self.assertEqual(att3.passing_score_used, 90)
+
     def test_subject_progress_and_understanding_calculations(self):
         # Topic 1 completed (100%), Topic 2 not attempted (0%)
         # Subject progress should be 1/2 = 50%
-        answers_correct = {q.id: q.choices.get(is_correct=True).id for q in self.topic1.questions.all()}
+        answers_correct = {q.id: q.choices.get(is_correct=True).id for q in self.topic1.questions.filter(is_active=True)}
         submit_quiz_attempt(self.learner, self.topic1, answers_correct)
 
         summary = get_subject_progress_summary(self.learner, self.subject)
@@ -116,12 +138,12 @@ class LMSCoreTests(TestCase):
         new_sub = Subject.objects.create(name="Cyber Security", order=99)
         new_topic = Topic.objects.create(subject=new_sub, name="Password Hygiene", summary="Summary", order=1)
         for i in range(1, 6):
-            q = Question.objects.create(topic=new_topic, text=f"Q{i}", order=i)
+            q = Question.objects.create(required=False, topic=new_topic, text=f"Q{i}", order=i)
             Choice.objects.create(question=q, text="Yes", is_correct=True)
             Choice.objects.create(question=q, text="No", is_correct=False)
 
         self.assertTrue(new_topic.is_assessment_ready())
-        answers = {q.id: q.choices.get(is_correct=True).id for q in new_topic.questions.all()}
+        answers = {q.id: q.choices.get(is_correct=True).id for q in new_topic.questions.filter(is_active=True)}
         att, tp = submit_quiz_attempt(self.learner, new_topic, answers)
         self.assertTrue(att.passed)
         self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)

@@ -3,13 +3,13 @@
 {% block title %}Learners Management - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
   <div>
     <h3 class="fw-bold text-dark mb-1">Learners Management</h3>
     <p class="text-muted mb-0">Manage learner accounts, activate/deactivate access, and reset passwords.</p>
   </div>
 
-  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addLearnerModal">
+  <button type="button" class="btn btn-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addLearnerModal">
     <i class="bi bi-person-plus-fill me-1"></i> Add Learner
   </button>
 </div>
@@ -45,16 +45,28 @@
               {% endif %}
             </td>
             <td class="text-end pe-4">
-              <div class="d-flex gap-2 justify-content-end">
-                <a href="{% url 'portal_learner_edit' item.learner.id %}" class="btn btn-sm btn-outline-primary">Edit Details</a>
-                <a href="{% url 'portal_learner_access' learner_id=item.learner.id %}" class="btn btn-sm btn-outline-info">Access</a>
-                <form action="{% url 'portal_learner_toggle_status' item.learner.id %}" method="post" class="d-inline">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-sm btn-outline-{% if item.learner.is_active %}warning{% else %}success{% endif %}">
-                    {% if item.learner.is_active %}Deactivate{% else %}Activate{% endif %}
+              <div class="d-flex gap-2 justify-content-end flex-nowrap">
+                <a href="{% url 'portal_learner_edit' item.learner.id %}" class="btn btn-sm btn-outline-primary text-nowrap" title="Edit Details" aria-label="Edit Details">
+                  <i class="bi bi-pencil"></i><span class="d-none d-lg-inline ms-1">Edit Details</span>
+                </a>
+                <a href="{% url 'portal_learner_access' learner_id=item.learner.id %}" class="btn btn-sm btn-outline-info text-nowrap" title="Access" aria-label="Access">
+                  <i class="bi bi-shield-lock"></i><span class="d-none d-lg-inline ms-1">Access</span>
+                </a>
+                {% if item.learner.is_active %}
+                  <button type="button" class="btn btn-sm btn-outline-warning text-nowrap" data-bs-toggle="modal" data-bs-target="#deactivateModal" data-action-url="{% url 'portal_learner_toggle_status' item.learner.id %}" title="Deactivate" aria-label="Deactivate">
+                    <i class="bi bi-pause-circle"></i><span class="d-none d-lg-inline ms-1">Deactivate</span>
                   </button>
-                </form>
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#resetPasswordModal" data-learner-username="{{ item.learner.username }}" data-action-url="{% url 'portal_learner_reset_password' item.learner.id %}">Reset Password</button>
+                {% else %}
+                  <form action="{% url 'portal_learner_toggle_status' item.learner.id %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-success text-nowrap" title="Activate" aria-label="Activate">
+                      <i class="bi bi-play-circle"></i><span class="d-none d-lg-inline ms-1">Activate</span>
+                    </button>
+                  </form>
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" data-bs-toggle="modal" data-bs-target="#resetPasswordModal" data-learner-username="{{ item.learner.username }}" data-action-url="{% url 'portal_learner_reset_password' item.learner.id %}" title="Reset Password" aria-label="Reset Password">
+                  <i class="bi bi-key"></i><span class="d-none d-xl-inline ms-1">Reset Password</span>
+                </button>
               </div>
             </td>
           </tr>
@@ -100,7 +112,12 @@
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Initial Password</label>
-            {{ form.password }}
+            <div class="input-group">
+              {{ form.password }}
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
             <div class="form-text">Defaults to <code>password123</code> if left blank.</div>
           </div>
           <div class="form-check mb-2">
@@ -213,6 +230,28 @@
   </div>
 </div>
 
+<!-- Deactivate Learner Modal -->
+<div class="modal fade" id="deactivateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="deactivateForm" method="post" action="">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold">Deactivate Learner?</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0">Are you sure you want to deactivate this learner? They will no longer be able to access the learning portal.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">Deactivate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     const resetModal = document.getElementById('resetPasswordModal');
@@ -231,6 +270,19 @@
         
         if (actionUrl) {
           const form = resetModal.querySelector('#resetPasswordForm');
+          if (form) form.action = actionUrl;
+        }
+      });
+    }
+
+    const deactivateModal = document.getElementById('deactivateModal');
+    if (deactivateModal) {
+      deactivateModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        if (!button) return;
+        const actionUrl = button.getAttribute('data-action-url');
+        if (actionUrl) {
+          const form = deactivateModal.querySelector('#deactivateForm');
           if (form) form.action = actionUrl;
         }
       });

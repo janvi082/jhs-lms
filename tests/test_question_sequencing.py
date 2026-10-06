@@ -27,26 +27,26 @@ class QuestionSequencingTests(TestCase):
 
     def test_model_append_order(self):
         # 1. First Question gets order 1
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
         self.assertEqual(q1.order, 1)
         
         # 2. Second Question gets MAX + 1
-        q2 = Question.objects.create(topic=self.topic, text="Q2")
+        q2 = Question.objects.create(required=False, topic=self.topic, text="Q2")
         self.assertEqual(q2.order, 2)
         
         # 3. Delete a question, leaving a gap, then create another question
         q2.delete()
-        q3 = Question.objects.create(topic=self.topic, text="Q3")
+        q3 = Question.objects.create(required=False, topic=self.topic, text="Q3")
         self.assertEqual(q3.order, 2) # max is 1, so 1+1=2. Let's create more to make a real gap.
         
-        q4 = Question.objects.create(topic=self.topic, text="Q4")
+        q4 = Question.objects.create(required=False, topic=self.topic, text="Q4")
         self.assertEqual(q4.order, 3)
         
         # Now we have Q1 (order=1), Q3 (order=2), Q4 (order=3)
         # Delete Q3 (order=2) to leave gap [1, 3]
         q3.delete()
         
-        q5 = Question.objects.create(topic=self.topic, text="Q5")
+        q5 = Question.objects.create(required=False, topic=self.topic, text="Q5")
         self.assertEqual(q5.order, 4) # MAX is 3, so MAX+1 is 4, not count()+1=3.
         
         # 4. Existing Question.save() does not automatically change its existing order
@@ -56,9 +56,9 @@ class QuestionSequencingTests(TestCase):
 
     def test_reorder_valid(self):
         self.client.login(username='admin', password='password')
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
-        q2 = Question.objects.create(topic=self.topic, text="Q2")
-        q3 = Question.objects.create(topic=self.topic, text="Q3")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
+        q2 = Question.objects.create(required=False, topic=self.topic, text="Q2")
+        q3 = Question.objects.create(required=False, topic=self.topic, text="Q3")
         
         # Reorder to Q3, Q1, Q2
         resp = self.client.post(self.reorder_url, json.dumps({
@@ -78,8 +78,8 @@ class QuestionSequencingTests(TestCase):
 
     def test_reorder_duplicate_ids_rejected(self):
         self.client.login(username='admin', password='password')
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
-        q2 = Question.objects.create(topic=self.topic, text="Q2")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
+        q2 = Question.objects.create(required=False, topic=self.topic, text="Q2")
         
         resp = self.client.post(self.reorder_url, json.dumps({
             'topic_id': self.topic.id,
@@ -92,8 +92,8 @@ class QuestionSequencingTests(TestCase):
 
     def test_reorder_missing_ids_rejected(self):
         self.client.login(username='admin', password='password')
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
-        q2 = Question.objects.create(topic=self.topic, text="Q2")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
+        q2 = Question.objects.create(required=False, topic=self.topic, text="Q2")
         
         resp = self.client.post(self.reorder_url, json.dumps({
             'topic_id': self.topic.id,
@@ -105,7 +105,7 @@ class QuestionSequencingTests(TestCase):
 
     def test_reorder_extra_ids_rejected(self):
         self.client.login(username='admin', password='password')
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
         
         resp = self.client.post(self.reorder_url, json.dumps({
             'topic_id': self.topic.id,
@@ -117,10 +117,10 @@ class QuestionSequencingTests(TestCase):
 
     def test_reorder_cross_topic_rejected(self):
         self.client.login(username='admin', password='password')
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
         
         topic2 = Topic.objects.create(subject=self.subject, name='Topic 2', order=2)
-        q2 = Question.objects.create(topic=topic2, text="Q2")
+        q2 = Question.objects.create(required=False, topic=topic2, text="Q2")
         
         resp = self.client.post(self.reorder_url, json.dumps({
             'topic_id': self.topic.id,
@@ -132,7 +132,7 @@ class QuestionSequencingTests(TestCase):
 
     def test_reorder_wrong_count_rejected(self):
         self.client.login(username='admin', password='password')
-        q1 = Question.objects.create(topic=self.topic, text="Q1")
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1")
         
         resp = self.client.post(self.reorder_url, json.dumps({
             'topic_id': self.topic.id,
@@ -169,7 +169,8 @@ class QuestionSequencingTests(TestCase):
             'question_ids': []
         }), content_type='application/json')
         # Admin required redirect/forbidden
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('learner_dashboard'), resp.url)
 
     def test_reorder_unauthenticated_rejected(self):
         resp = self.client.post(self.reorder_url, json.dumps({
@@ -180,13 +181,13 @@ class QuestionSequencingTests(TestCase):
 
     def test_historical_regression(self):
         # Existing completed attempt remains in original response order after Question.order is changed
-        q1 = Question.objects.create(topic=self.topic, text="Q1", question_type=Question.TYPE_SINGLE_CHOICE)
+        q1 = Question.objects.create(required=False, topic=self.topic, text="Q1", question_type=Question.TYPE_SINGLE_CHOICE)
         c1 = Choice.objects.create(question=q1, text="C1", is_correct=True)
         
-        q2 = Question.objects.create(topic=self.topic, text="Q2", question_type=Question.TYPE_SINGLE_CHOICE)
+        q2 = Question.objects.create(required=False, topic=self.topic, text="Q2", question_type=Question.TYPE_SINGLE_CHOICE)
         c2 = Choice.objects.create(question=q2, text="C2", is_correct=True)
         
-        q3 = Question.objects.create(topic=self.topic, text="Q3", question_type=Question.TYPE_SINGLE_CHOICE)
+        q3 = Question.objects.create(required=False, topic=self.topic, text="Q3", question_type=Question.TYPE_SINGLE_CHOICE)
         c3 = Choice.objects.create(question=q3, text="C3", is_correct=True)
         
         # Learner submits quiz

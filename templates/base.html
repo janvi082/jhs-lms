@@ -11,7 +11,7 @@
   <!-- Bootstrap Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <!-- Custom Theme CSS -->
-  <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+  <link rel="stylesheet" href="{% static 'css/theme.css' %}?v=2">
   <!-- HTMX CDN -->
   <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt9ApKC1FxpFQ20+/BYDeYEFO0epV7635W50LNdFGV7cM6518e8Y6845qB3hDx" crossorigin="anonymous"></script>
   {% block extra_head %}{% endblock %}
@@ -19,16 +19,20 @@
 <body>
   <!-- Navbar -->
   <nav class="navbar navbar-expand-lg navbar-custom sticky-top">
-    <img src="{% static 'images/jhs_logo1.png' %}"
-        alt="JHS"
-        class="navbar-brand-logo">
-    <div class="container">
-      <a class="navbar-brand d-flex align-items-center gap-2" href="{% url 'learner_dashboard' %}">
-        <!-- <i class="navbar-brand-logobbibbbi bimortarboard-fill text-danger"></i>
-        <span>JHS Learning Portal</span> -->
-        
-        <span>Learning Portal</span>
-      </a>
+    <div class="container{% block container_suffix %}{% endblock %}">
+      <div class="d-flex align-items-center">
+        {% block navbar_left_controls %}{% endblock %}
+        {% block navbar_logo %}
+        <a href="{% url 'learner_dashboard' %}" class="d-flex align-items-center me-2">
+          <img src="{% static 'images/jhs_logo1.png' %}"
+              alt="JHS"
+              class="navbar-brand-logo">
+        </a>
+        {% endblock %}
+        <a class="navbar-brand d-flex align-items-center gap-2" href="{% url 'learner_dashboard' %}">
+          <span>Learning Portal</span>
+        </a>
+      </div>
       
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain" aria-controls="navbarMain" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -84,19 +88,21 @@
   </nav>
 
   <!-- Messages -->
+  {% block messages_container %}
   {% if messages %}
-  <div class="container mt-3">
+  <div class="container{% block container_suffix_messages %}{% endblock %} mt-3">
     {% for message in messages %}
-    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">
+    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show shadow-sm" role="alert">
       {{ message }}
       <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
     {% endfor %}
   </div>
   {% endif %}
+  {% endblock %}
 
   <!-- Main Content -->
-  <main class="container my-4 flex-grow-1">
+  <main class="container{% block container_suffix_main %}{% endblock %} {% block main_margin %}my-4{% endblock %} flex-grow-1">
     {% block content %}{% endblock %}
   </main>
 

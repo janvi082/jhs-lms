@@ -62,7 +62,7 @@ class TopicAdmin(SortableAdminMixin, admin.ModelAdmin):
     inlines = [VideoInline, ResourceInline, QuestionInline]
 
     def question_count_display(self, obj):
-        count = obj.questions.count()
+        count = obj.active_question_count
         status = "Ready" if obj.is_assessment_ready() else "Pending Questions"
         return f"{count} questions ({status})"
     question_count_display.short_description = "Assessment Status"

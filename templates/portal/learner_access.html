@@ -8,10 +8,10 @@
     </a>
 </div>
 
-<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-2">
     <div>
         <h2 class="mb-1 fs-4">Manage Learner Access</h2>
-        <div class="text-muted fs-6">
+        <div class="text-muted small">
             <span class="fw-semibold text-dark">{{ learner.get_full_name|default:learner.username }}</span> &bull;
             {% if learner.email %}<span>{{ learner.email }}</span> &bull; {% endif %}
             <span>{{ learner.username }}</span> &bull;
@@ -22,20 +22,20 @@
     </div>
 </div>
 
-<div class="d-flex flex-wrap gap-4 mb-3">
-    <div class="fs-6">
-        <span class="fw-semibold">Allowed</span>
+<div class="d-flex flex-column flex-md-row gap-1 gap-md-4 mb-2 small bg-white p-2 p-md-3 rounded border shadow-sm">
+    <div>
+        <span class="fw-semibold text-success">Allowed</span>
         <span id="allowed-summary" class="text-muted ms-1">0 Subjects &bull; 0 Topics &bull; 0 Videos &bull; 0 Materials</span>
     </div>
-    <div class="fs-6">
-        <span class="fw-semibold">Restricted</span>
+    <div>
+        <span class="fw-semibold text-danger">Restricted</span>
         <span id="restricted-summary" class="text-muted ms-1">0 Subjects &bull; 0 Topics &bull; 0 Videos &bull; 0 Materials</span>
     </div>
 </div>
 
-<div class="d-flex align-items-center mb-3 small text-muted">
-    <span>Access is allowed by default. Restrictions override access and cascade to descendants.</span>
-    <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-decoration-none" data-bs-toggle="modal" data-bs-target="#accessRulesModal">
+<div class="d-flex flex-wrap align-items-center mb-3 small text-muted">
+    <span class="me-1">Access is allowed by default. Restrictions override access and cascade to descendants.</span>
+    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="modal" data-bs-target="#accessRulesModal">
         Access rules
     </button>
 </div>
@@ -167,5 +167,5 @@
     </div>
 </div>
 
-<script src="{% static 'portal/learner_access.js' %}"></script>
+<script src="{% static 'portal/learner_access.js' %}?v=2"></script>
 {% endblock %}

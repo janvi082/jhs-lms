@@ -40,7 +40,7 @@
     </div>
   </div>
 
-  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addQuestionModal">
+  <button type="button" class="btn btn-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addQuestionModal">
     <i class="bi bi-plus-lg me-1"></i> Add Question
   </button>
 </div>
@@ -50,32 +50,44 @@
   {% for q in questions %}
   <div class="col-12 question-row" data-question-id="{{ q.id }}">
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center gap-3">
-        <div class="d-flex align-items-center flex-grow-1">
-          <i class="bi bi-grip-vertical text-muted me-2" style="cursor: grab;"></i>
-          <span class="badge bg-light text-dark border me-2 display-order">{{ forloop.counter }}</span>
-          <span class="badge bg-primary me-2">{{ q.get_question_type_display }}</span>
-          {% if q.required %}
-            <span class="badge bg-secondary me-2">Required</span>
-          {% else %}
-            <span class="badge bg-light text-muted border me-2">Optional</span>
-          {% endif %}
-          <span class="fw-bold text-dark">{{ q.text }}</span>
+      <div class="card-header bg-white py-3 border-bottom d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3">
+        <!-- Left Side: Drag, Order, Labels, and Text -->
+        <div class="d-flex align-items-start flex-grow-1" style="min-width: 0;">
+          <div class="d-flex align-items-center me-2 mt-1 flex-shrink-0">
+            <i class="bi bi-grip-vertical text-muted me-1" style="cursor: grab;"></i>
+            <span class="badge bg-light text-dark border display-order" style="min-width: 2rem;">{{ forloop.counter }}</span>
+          </div>
+          <div class="flex-grow-1" style="min-width: 0;">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <span class="badge bg-primary">{{ q.get_question_type_display }}</span>
+              {% if q.required %}
+                <span class="badge bg-secondary">Required</span>
+              {% else %}
+                <span class="badge bg-light text-muted border">Optional</span>
+              {% endif %}
+            </div>
+            <div class="fw-bold text-dark text-break">{{ q.text }}</div>
+          </div>
         </div>
-        <div class="d-flex gap-2 flex-shrink-0">
+        
+        <!-- Right Side: Actions -->
+        <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 ms-lg-4">
           <div class="btn-group">
             <button type="button" class="btn btn-sm btn-outline-secondary move-up-btn" title="Move Up"><i class="bi bi-chevron-up"></i></button>
             <button type="button" class="btn btn-sm btn-outline-secondary move-down-btn" title="Move Down"><i class="bi bi-chevron-down"></i></button>
           </div>
-          <form action="{% url 'portal_question_delete' q.id %}" method="post" onsubmit="return confirm('Delete this question?');" class="mb-0">
+          <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#editQuestionModal_{{ q.id }}" title="Edit">
+            <i class="bi bi-pencil me-1"></i> Edit
+          </button>
+          <form action="{% url 'portal_question_delete' q.id %}" method="post" onsubmit="return confirm('Retire or delete this question?\n\nUsed questions will be safely archived to preserve historical attempts.');" class="m-0" style="display: contents;">
             {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-outline-danger">
-              <i class="bi bi-trash me-1"></i> Delete
+            <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap" title="Retire / Delete">
+              <i class="bi bi-trash me-1"></i> Retire / Delete
             </button>
           </form>
         </div>
       </div>
-      <div class="card-body p-3">
+      <div class="card-body p-2 p-md-3">
         {% if q.question_type == 'single' or q.question_type == 'multiple' or q.question_type == 'true_false' %}
           <div class="row g-2">
             {% for c in q.choices.all %}
@@ -108,16 +120,222 @@
       </div>
     </div>
   </div>
+
+  <!-- Edit Question Modal -->
+  <div class="modal fade" id="editQuestionModal_{{ q.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <form action="{% url 'portal_question_edit' q.id %}" method="post">
+          {% csrf_token %}
+          <div class="modal-header">
+            <h5 class="modal-title fw-bold">Edit Assessment Question</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-2 g-md-3 mb-3">
+              <div class="col-md-8">
+                <label class="form-label fw-semibold">Question Type</label>
+                <select name="question_type" class="form-select" onchange="toggleEditQuestionTypeFields(this, '{{ q.id }}')">
+                  <option value="single" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type == 'single' %}selected{% endif %}{% elif q.question_type == 'single' %}selected{% endif %}>Single Choice (Radio Buttons)</option>
+                  <option value="multiple" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type == 'multiple' %}selected{% endif %}{% elif q.question_type == 'multiple' %}selected{% endif %}>Multiple Choice (Checkboxes)</option>
+                  <option value="true_false" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type == 'true_false' %}selected{% endif %}{% elif q.question_type == 'true_false' %}selected{% endif %}>True / False</option>
+                  <option value="short_answer" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type == 'short_answer' %}selected{% endif %}{% elif q.question_type == 'short_answer' %}selected{% endif %}>Short Answer</option>
+                  <option value="paragraph" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type == 'paragraph' %}selected{% endif %}{% elif q.question_type == 'paragraph' %}selected{% endif %}>Paragraph (Open Text Response)</option>
+                </select>
+              </div>
+              <div class="col-md-4 d-flex align-items-end">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="required" value="true" id="requiredCheck_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.required %}checked{% endif %}{% elif q.required %}checked{% endif %}>
+                  <label class="form-check-label fw-semibold" for="requiredCheck_{{ q.id }}">
+                    Required Question
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Question Text</label>
+              <textarea name="question_text" class="form-control" rows="2" required>{% if editing_question_id == q.id and submitted_data %}{{ submitted_data.question_text }}{% else %}{{ q.text }}{% endif %}</textarea>
+            </div>
+
+            <!-- SINGLE CHOICE FIELDS -->
+            <div id="singleChoiceFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'single' %}style="display: none;"{% endif %}{% elif q.question_type != 'single' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
+              {% for i in '123456'|make_list %}
+                <div class="input-group mb-2">
+                  <input type="hidden" name="choice_id_{{ forloop.counter }}" id="sc_id_{{ q.id }}_{{ forloop.counter }}">
+                  <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="{{ forloop.counter }}" id="sc_correct_{{ q.id }}_{{ forloop.counter }}"></div>
+                  <input type="text" name="choice_{{ forloop.counter }}" id="sc_text_{{ q.id }}_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text">
+                </div>
+              {% endfor %}
+            </div>
+
+            <!-- MULTIPLE CHOICE FIELDS -->
+            <div id="multipleChoiceFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'multiple' %}style="display: none;"{% endif %}{% elif q.question_type != 'multiple' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
+              {% for i in '123456'|make_list %}
+                <div class="input-group mb-2">
+                  <input type="hidden" name="choice_id_{{ forloop.counter }}" id="mc_id_{{ q.id }}_{{ forloop.counter }}">
+                  <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="{{ forloop.counter }}" id="mc_correct_{{ q.id }}_{{ forloop.counter }}"></div>
+                  <input type="text" name="choice_{{ forloop.counter }}" id="mc_text_{{ q.id }}_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text">
+                </div>
+              {% endfor %}
+            </div>
+
+            <!-- TRUE / FALSE FIELDS -->
+            <div id="trueFalseFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'true_false' %}style="display: none;"{% endif %}{% elif q.question_type != 'true_false' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Correct Answer</label>
+              <select name="tf_correct" class="form-select">
+                <option value="true" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.tf_correct == 'true' %}selected{% endif %}{% else %}{% for c in q.choices.all %}{% if c.is_correct and c.text == 'True' %}selected{% endif %}{% endfor %}{% endif %}>True</option>
+                <option value="false" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.tf_correct == 'false' %}selected{% endif %}{% else %}{% for c in q.choices.all %}{% if c.is_correct and c.text == 'False' %}selected{% endif %}{% endfor %}{% endif %}>False</option>
+              </select>
+            </div>
+<!-- SHORT ANSWER FIELDS -->
+            <div id="shortAnswerFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'short_answer' %}style="display: none;"{% endif %}{% elif q.question_type != 'short_answer' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Accepted Answers</label>
+              <textarea name="accepted_answers" class="form-control" rows="2" placeholder="Comma separated list of correct answers...">{% if editing_question_id == q.id and submitted_data %}{{ submitted_data.accepted_answers }}{% elif q.question_type == 'short_answer' %}{{ q.accepted_answers }}{% endif %}</textarea>
+            </div>
+            <div class="alert alert-warning mt-3 mb-0 py-2 small">
+              <strong>Note:</strong> Editing a question that has already been taken by learners will automatically create a new version behind the scenes to preserve historical attempts.
+            </div>
+          </div>
+          
+          <script>
+            document.addEventListener("DOMContentLoaded", function() {
+              var choices_{{ q.id }} = [
+                {% for c in q.choices.all %}
+                  { id: "{{ c.id }}", text: "{{ c.text|escapejs }}", is_correct: {{ c.is_correct|yesno:"true,false" }} }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+              ];
+              choices_{{ q.id }}.forEach(function(c, idx) {
+                var i = idx + 1;
+                
+                var scId = document.getElementById("sc_id_{{ q.id }}_" + i);
+                var scCorrect = document.getElementById("sc_correct_{{ q.id }}_" + i);
+                var scText = document.getElementById("sc_text_{{ q.id }}_" + i);
+                if (scId) scId.value = c.id;
+                
+                var mcId = document.getElementById("mc_id_{{ q.id }}_" + i);
+                var mcCorrect = document.getElementById("mc_correct_{{ q.id }}_" + i);
+                var mcText = document.getElementById("mc_text_{{ q.id }}_" + i);
+                if (mcId) mcId.value = c.id;
+                
+                {% if editing_question_id != q.id or not submitted_data %}
+                  if (scCorrect) scCorrect.checked = c.is_correct;
+                  if (scText) scText.value = c.text;
+                  if (mcCorrect) mcCorrect.checked = c.is_correct;
+                  if (mcText) mcText.value = c.text;
+                {% endif %}
+              });
+              
+              {% if editing_question_id == q.id and submitted_data %}
+                var submitted = {
+                  'choice_1': "{{ submitted_data.choice_1|escapejs }}",
+                  'choice_2': "{{ submitted_data.choice_2|escapejs }}",
+                  'choice_3': "{{ submitted_data.choice_3|escapejs }}",
+                  'choice_4': "{{ submitted_data.choice_4|escapejs }}",
+                  'choice_5': "{{ submitted_data.choice_5|escapejs }}",
+                  'choice_6': "{{ submitted_data.choice_6|escapejs }}",
+                  'correct_choice': "{{ submitted_data.correct_choice|escapejs }}",
+                  'correct_choices_list': [
+                    {% for cc in submitted_data.correct_choices_list %}"{{ cc|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}
+                  ]
+                };
+                for(var i=1; i<=6; i++) {
+                  var scText = document.getElementById("sc_text_{{ q.id }}_" + i);
+                  if (scText) scText.value = submitted['choice_' + i];
+                  
+                  var scCorrect = document.getElementById("sc_correct_{{ q.id }}_" + i);
+                  if (scCorrect) scCorrect.checked = (submitted['correct_choice'] == i);
+                  
+                  var mcText = document.getElementById("mc_text_{{ q.id }}_" + i);
+                  if (mcText) mcText.value = submitted['choice_' + i];
+                  
+                  var mcCorrect = document.getElementById("mc_correct_{{ q.id }}_" + i);
+                  if (mcCorrect) mcCorrect.checked = (submitted['correct_choices_list'].includes(i.toString()));
+                }
+              {% endif %}
+              var qSelect = document.querySelector('#editQuestionModal_{{ q.id }} select[name="question_type"]');
+                if (qSelect) {
+                  toggleEditQuestionTypeFields(qSelect, '{{ q.id }}');
+                }
+              });
+            </script>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
   {% empty %}
   <div class="col-12 text-center py-5 bg-white rounded border">
     <i class="bi bi-patch-question text-muted display-4"></i>
     <p class="text-muted mt-2">No assessment questions added for this topic yet.</p>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addQuestionModal">
+    <button type="button" class="btn btn-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addQuestionModal">
       <i class="bi bi-plus-lg me-1"></i> Add First Question
     </button>
   </div>
   {% endfor %}
 </div>
+
+{% if archived_questions %}
+<h4 class="fw-bold mb-3 mt-5">Archived / Retired Questions</h4>
+<div class="row g-4 mb-4">
+  {% for q in archived_questions %}
+  <div class="col-12 opacity-75">
+    <div class="card border-0 shadow-sm bg-light">
+      <div class="card-header py-3 border-bottom d-flex justify-content-between align-items-center gap-3">
+        <div class="d-flex align-items-center flex-grow-1">
+          <div>
+            <span class="badge bg-secondary me-2">Retired</span>
+            <span class="badge bg-secondary me-2">{{ q.get_question_type_display }}</span>
+            <strong class="text-secondary">Q{{ q.order }}</strong>
+            {% if q.required %}
+              <span class="badge bg-secondary ms-2"><i class="bi bi-asterisk"></i> Required</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="card-body p-2 p-md-3">
+        <p class="mb-3 text-secondary">{{ q.text }}</p>
+        {% if q.question_type == 'single' or q.question_type == 'multiple' or q.question_type == 'true_false' %}
+          <div class="row g-2">
+            {% for c in q.choices.all %}
+            <div class="col-md-6 col-lg-4">
+              <div class="p-2 border rounded d-flex justify-content-between align-items-center {% if c.is_correct %}bg-secondary-subtle border-secondary-subtle{% else %}bg-white{% endif %}">
+                <span class="small text-secondary text-truncate me-2" title="{{ c.text }}">
+                  {{ c.text }}
+                </span>
+                {% if c.is_correct %}
+                  <span class="badge bg-secondary small"><i class="bi bi-check-circle-fill me-1"></i> Correct Answer</span>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% elif q.question_type == 'short_answer' %}
+          <div class="p-2 bg-white border rounded">
+            <strong class="small text-secondary d-block mb-1"><i class="bi bi-check-all me-1"></i> Accepted Answers (Case-Insensitive):</strong>
+            <ul class="mb-0 ps-3 small text-secondary">
+              {% for ans in q.get_accepted_answers_list %}
+                <li><code>{{ ans }}</code></li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% elif q.question_type == 'paragraph' %}
+          <div class="p-2 bg-white border rounded">
+            <span class="small text-muted"><i class="bi bi-fonts me-1"></i> Open-ended text response. Saved for admin review (not automatically graded).</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <!-- Add Question Modal -->
 <div class="modal fade" id="addQuestionModal" tabindex="-1" aria-hidden="true">
@@ -130,7 +348,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="row g-3 mb-3">
+          <div class="row g-2 g-md-3 mb-3">
             <div class="col-md-8">
               <label class="form-label fw-semibold">Question Type</label>
               <select name="question_type" id="questionTypeSelect" class="form-select" onchange="toggleQuestionTypeFields()">
@@ -157,79 +375,38 @@
           </div>
 
           <!-- SINGLE CHOICE FIELDS -->
-          <div id="singleChoiceFields">
-            <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="1" {% if submitted_data.correct_choice == "1" %}checked{% elif not submitted_data and "1" == "1" %}checked{% endif %}></div>
-              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text" value="{{ submitted_data.choice_1|default:'' }}">
+            <div id="singleChoiceFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'single' %}style="display: none;"{% endif %}{% elif q.question_type != 'single' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
+              {% for i in '123456'|make_list %}
+                <div class="input-group mb-2">
+                  <input type="hidden" name="choice_id_{{ forloop.counter }}" id="sc_id_{{ q.id }}_{{ forloop.counter }}">
+                  <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="{{ forloop.counter }}" id="sc_correct_{{ q.id }}_{{ forloop.counter }}"></div>
+                  <input type="text" name="choice_{{ forloop.counter }}" id="sc_text_{{ q.id }}_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text">
+                </div>
+              {% endfor %}
             </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="2" {% if submitted_data.correct_choice == "2" %}checked{% endif %}></div>
-              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text" value="{{ submitted_data.choice_2|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="3" {% if submitted_data.correct_choice == "3" %}checked{% endif %}></div>
-              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)" value="{{ submitted_data.choice_3|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="4" {% if submitted_data.correct_choice == "4" %}checked{% endif %}></div>
-              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)" value="{{ submitted_data.choice_4|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="5" {% if submitted_data.correct_choice == "5" %}checked{% endif %}></div>
-              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)" value="{{ submitted_data.choice_5|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="6" {% if submitted_data.correct_choice == "6" %}checked{% endif %}></div>
-              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)" value="{{ submitted_data.choice_6|default:'' }}">
-            </div>
-          </div>
 
           <!-- MULTIPLE CHOICE FIELDS -->
-          <div id="multipleChoiceFields" style="display: none;">
-            <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="1" {% if "1" in submitted_data.correct_choices_list %}checked{% endif %}></div>
-              <input type="text" name="choice_1" class="form-control" placeholder="Choice 1 text" value="{{ submitted_data.choice_1|default:'' }}">
+            <div id="multipleChoiceFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'multiple' %}style="display: none;"{% endif %}{% elif q.question_type != 'multiple' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
+              {% for i in '123456'|make_list %}
+                <div class="input-group mb-2">
+                  <input type="hidden" name="choice_id_{{ forloop.counter }}" id="mc_id_{{ q.id }}_{{ forloop.counter }}">
+                  <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="{{ forloop.counter }}" id="mc_correct_{{ q.id }}_{{ forloop.counter }}"></div>
+                  <input type="text" name="choice_{{ forloop.counter }}" id="mc_text_{{ q.id }}_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text">
+                </div>
+              {% endfor %}
             </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="2" {% if "2" in submitted_data.correct_choices_list %}checked{% endif %}></div>
-              <input type="text" name="choice_2" class="form-control" placeholder="Choice 2 text" value="{{ submitted_data.choice_2|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="3" {% if "3" in submitted_data.correct_choices_list %}checked{% endif %}></div>
-              <input type="text" name="choice_3" class="form-control" placeholder="Choice 3 text (optional)" value="{{ submitted_data.choice_3|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="4" {% if "4" in submitted_data.correct_choices_list %}checked{% endif %}></div>
-              <input type="text" name="choice_4" class="form-control" placeholder="Choice 4 text (optional)" value="{{ submitted_data.choice_4|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="5" {% if "5" in submitted_data.correct_choices_list %}checked{% endif %}></div>
-              <input type="text" name="choice_5" class="form-control" placeholder="Choice 5 text (optional)" value="{{ submitted_data.choice_5|default:'' }}">
-            </div>
-            <div class="input-group mb-2">
-              <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="6" {% if "6" in submitted_data.correct_choices_list %}checked{% endif %}></div>
-              <input type="text" name="choice_6" class="form-control" placeholder="Choice 6 text (optional)" value="{{ submitted_data.choice_6|default:'' }}">
-            </div>
-          </div>
 
           <!-- TRUE / FALSE FIELDS -->
-          <div id="trueFalseFields" style="display: none;">
-            <label class="form-label fw-semibold mb-2">Correct Answer</label>
-            <div class="d-flex gap-4 p-3 bg-light rounded border">
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="tf_correct" id="tfTrue" value="true" {% if submitted_data.tf_correct == "true" or not submitted_data %}checked{% endif %}>
-                <label class="form-check-label fw-bold text-success" for="tfTrue">True</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="tf_correct" id="tfFalse" value="false" {% if submitted_data.tf_correct == "false" %}checked{% endif %}>
-                <label class="form-check-label fw-bold text-danger" for="tfFalse">False</label>
-              </div>
+            <div id="trueFalseFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'true_false' %}style="display: none;"{% endif %}{% elif q.question_type != 'true_false' %}style="display: none;"{% endif %}>
+              <label class="form-label fw-semibold mb-2">Correct Answer</label>
+              <select name="tf_correct" class="form-select">
+                <option value="true" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.tf_correct == 'true' %}selected{% endif %}{% else %}{% for c in q.choices.all %}{% if c.is_correct and c.text == 'True' %}selected{% endif %}{% endfor %}{% endif %}>True</option>
+                <option value="false" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.tf_correct == 'false' %}selected{% endif %}{% else %}{% for c in q.choices.all %}{% if c.is_correct and c.text == 'False' %}selected{% endif %}{% endfor %}{% endif %}>False</option>
+              </select>
             </div>
-          </div>
-
-          <!-- SHORT ANSWER FIELDS -->
+<!-- SHORT ANSWER FIELDS -->
           <div id="shortAnswerFields" style="display: none;">
             <label class="form-label fw-semibold">Accepted Answers (One per line)</label>
             <textarea name="accepted_answers" class="form-control" rows="4" placeholder="Value Added Tax&#10;VAT&#10;value-added tax">{{ submitted_data.accepted_answers|default:"" }}</textarea>
@@ -254,17 +431,60 @@
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", function() { toggleQuestionTypeFields(); });
+  document.addEventListener("DOMContentLoaded", function() { toggleQuestionTypeFields(); });
   function toggleQuestionTypeFields() {
-  var qType = document.getElementById('questionTypeSelect').value;
-  document.getElementById('singleChoiceFields').style.display = (qType === 'single') ? 'block' : 'none';
-  document.getElementById('multipleChoiceFields').style.display = (qType === 'multiple') ? 'block' : 'none';
-  document.getElementById('trueFalseFields').style.display = (qType === 'true_false') ? 'block' : 'none';
-  document.getElementById('shortAnswerFields').style.display = (qType === 'short_answer') ? 'block' : 'none';
-  document.getElementById('paragraphFields').style.display = (qType === 'paragraph') ? 'block' : 'none';
-}
-</script>
-</script>
+    var qType = document.getElementById('questionTypeSelect').value;
+    var scFields = document.getElementById('singleChoiceFields');
+    var mcFields = document.getElementById('multipleChoiceFields');
+    var tfFields = document.getElementById('trueFalseFields');
+    var saFields = document.getElementById('shortAnswerFields');
+    var pFields = document.getElementById('paragraphFields');
+    
+    if(scFields) {
+        scFields.style.display = (qType === 'single') ? 'block' : 'none';
+        Array.from(scFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'single'));
+    }
+    if(mcFields) {
+        mcFields.style.display = (qType === 'multiple') ? 'block' : 'none';
+        Array.from(mcFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'multiple'));
+    }
+    if(tfFields) {
+        tfFields.style.display = (qType === 'true_false') ? 'block' : 'none';
+        Array.from(tfFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'true_false'));
+    }
+    if(saFields) {
+        saFields.style.display = (qType === 'short_answer') ? 'block' : 'none';
+        Array.from(saFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'short_answer'));
+    }
+    if(pFields) {
+        pFields.style.display = (qType === 'paragraph') ? 'block' : 'none';
+    }
+  }
+  function toggleEditQuestionTypeFields(selectElem, qId) {
+    var qType = selectElem.value;
+    var scFields = document.getElementById('singleChoiceFields_' + qId);
+    var mcFields = document.getElementById('multipleChoiceFields_' + qId);
+    var tfFields = document.getElementById('trueFalseFields_' + qId);
+    var saFields = document.getElementById('shortAnswerFields_' + qId);
+    
+    if(scFields) {
+        scFields.style.display = (qType === 'single') ? 'block' : 'none';
+        Array.from(scFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'single'));
+    }
+    if(mcFields) {
+        mcFields.style.display = (qType === 'multiple') ? 'block' : 'none';
+        Array.from(mcFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'multiple'));
+    }
+    if(tfFields) {
+        tfFields.style.display = (qType === 'true_false') ? 'block' : 'none';
+        Array.from(tfFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'true_false'));
+    }
+    if(saFields) {
+        saFields.style.display = (qType === 'short_answer') ? 'block' : 'none';
+        Array.from(saFields.querySelectorAll('input, select, textarea')).forEach(el => el.disabled = (qType !== 'short_answer'));
+    }
+  }
+  </script>
 
 <!-- Reorder Controls -->
 <div id="reorderControls" class="position-fixed bottom-0 start-50 translate-middle-x mb-4 bg-white p-3 rounded-pill shadow-lg border d-none align-items-center gap-3" style="z-index: 1050;">
@@ -423,8 +643,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function moveUp(btn) {
         let row = btn.closest('div.question-row');
-        if (row.previousElementSibling && row.previousElementSibling.classList.contains('question-row')) {
-            swapWith(row, row.previousElementSibling, true);
+        let rows = Array.from(document.querySelectorAll('div.question-row'));
+        let index = rows.indexOf(row);
+        if (index > 0) {
+            swapWith(row, rows[index - 1], true);
             showSaveControls();
             updateDisplayOrders();
         }
@@ -432,8 +654,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function moveDown(btn) {
         let row = btn.closest('div.question-row');
-        if (row.nextElementSibling && row.nextElementSibling.classList.contains('question-row')) {
-            swapWith(row, row.nextElementSibling, false);
+        let rows = Array.from(document.querySelectorAll('div.question-row'));
+        let index = rows.indexOf(row);
+        if (index > -1 && index < rows.length - 1) {
+            swapWith(row, rows[index + 1], false);
             showSaveControls();
             updateDisplayOrders();
         }

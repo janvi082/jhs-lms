@@ -26,13 +26,14 @@ class LearnerAccessUITest(TestCase):
         url = reverse('portal_learner_access', kwargs={'learner_id': self.learner.id})
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Access Control for Learner')
+        self.assertContains(response, 'Manage Learner Access')
 
     def test_non_admin_forbidden(self):
         self.client.login(username='learner', password='learnerpass')
         url = reverse('portal_learner_access', kwargs={'learner_id': self.learner.id})
         response = self.client.get(url)
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('learner_dashboard'), response.url)
 
     def test_save_denied_access(self):
         self.client.login(username='admin', password='adminpass')

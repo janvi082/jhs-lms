@@ -74,33 +74,39 @@ class LearnerEditTests(TestCase):
         
         # GET
         response = self.client.get(self.edit_url)
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('learner_dashboard'), response.url)
         
         # POST
         data = {
             'username': 'hacked_username',
         }
         response = self.client.post(self.edit_url, data)
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('learner_dashboard'), response.url)
         
         self.learner_user.refresh_from_db()
         self.assertEqual(self.learner_user.username, 'learner1') # unchanged
 
     def test_existing_learner_actions_remain_available_on_learners_page(self):
+        inactive_learner = User.objects.create_user(username='inactive_test', password='password123', is_active=False)
+        inactive_toggle_url = reverse('portal_learner_toggle_status', args=[inactive_learner.id])
+
         self.client.login(username='admin_test', password='password123')
         response = self.client.get(reverse('portal_learners_list'))
         self.assertEqual(response.status_code, 200)
         
         content = response.content.decode('utf-8')
-        # Check that Edit Details button is present
         self.assertIn(f'href="{self.edit_url}"', content)
         self.assertIn('Edit Details', content)
         
-        # Check that other actions are present
         access_url = reverse('portal_learner_access', args=[self.learner_user.id])
         toggle_url = reverse('portal_learner_toggle_status', args=[self.learner_user.id])
         reset_url = reverse('portal_learner_reset_password', args=[self.learner_user.id])
         
         self.assertIn(f'href="{access_url}"', content)
-        self.assertIn(f'action="{toggle_url}"', content)
+        self.assertIn(f'data-action-url="{toggle_url}"', content)
         self.assertIn(f'data-action-url="{reset_url}"', content)
+        
+        self.assertIn(f'action="{inactive_toggle_url}"', content)
+
