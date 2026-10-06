@@ -20,7 +20,11 @@
     <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 gap-md-3">
       <div>
         <h3 class="fw-bold text-dark mb-1 fs-4 fs-md-3">{{ learner.get_full_name|default:learner.username }}</h3>
-        <p class="text-muted mb-0 small">Username: <code>@{{ learner.username }}</code><br class="d-block d-md-none"> <span class="d-none d-md-inline">|</span> Email: {{ learner.email|default:"N/A" }}</p>
+        <p class="text-muted mb-0 small">
+          Username: <code>@{{ learner.username }}</code><br class="d-block d-md-none"> <span class="d-none d-md-inline">|</span>
+          Email: {{ learner.email|default:"N/A" }}<br class="d-block d-md-none"> <span class="d-none d-md-inline">|</span>
+          Date of Joining: {{ learner.date_of_joining|date:"M j, Y"|default:"Not set" }}
+        </p>
       </div>
       <div class="bg-light p-2 p-md-3 rounded text-center" style="min-width: 120px;">
         <div class="small text-muted mb-1">Overall Progress</div>

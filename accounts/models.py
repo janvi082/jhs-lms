@@ -17,6 +17,12 @@ class User(AbstractUser):
         help_text="Role determining application access (Admin or Learner)"
     )
 
+    date_of_joining = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Official business joining date (Day 1 for learning phases)."
+    )
+
     @property
     def is_admin_user(self):
         return self.role == self.ROLE_ADMIN or self.is_staff or self.is_superuser

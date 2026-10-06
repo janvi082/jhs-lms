@@ -23,6 +23,7 @@
           <tr>
             <th class="ps-4 fw-bold">Learner Name</th>
             <th class="fw-bold">Username / Email</th>
+            <th class="fw-bold">Date of Joining</th>
             <th class="fw-bold">Account Status</th>
             <th class="text-end pe-4 fw-bold">Actions</th>
           </tr>
@@ -36,6 +37,9 @@
             <td>
               <div class="fw-normal text-muted">@{{ item.learner.username }}</div>
               <div class="text-muted small">{{ item.learner.email|default:"No email registered" }}</div>
+            </td>
+            <td>
+              <div class="fw-normal text-muted">{{ item.learner.date_of_joining|date:"M j, Y"|default:"Not set" }}</div>
             </td>
             <td>
               {% if item.learner.is_active %}
