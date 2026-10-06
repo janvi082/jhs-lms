@@ -21,6 +21,11 @@ class TopicProgress(models.Model):
     attempts_count = models.PositiveIntegerField(default=0)
     last_accessed = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    expected_end_day_snapshot = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Historical Learning Phase benchmark captured when this record was first created."
+    )
 
     class Meta:
         unique_together = ('user', 'topic')

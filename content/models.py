@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils.text import slugify
+from django.core.exceptions import ValidationError
 
 class SiteConfig(models.Model):
     default_passing_score = models.PositiveIntegerField(
@@ -53,6 +54,45 @@ class Subject(models.Model):
     def active_topics_count(self):
         return self.topics.filter(status='published').count()
 
+class LearningPhase(models.Model):
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='learning_phases')
+    name = models.CharField(max_length=200)
+    start_day = models.PositiveIntegerField()
+    end_day = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(start_day__gte=1), name='start_day_gte_1'),
+            models.CheckConstraint(check=models.Q(end_day__gte=models.F('start_day')), name='end_day_gte_start_day'),
+        ]
+
+    def __str__(self):
+        return f"{self.subject.name} - {self.name} (Day {self.start_day}-{self.end_day})"
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        if self.start_day is not None and self.end_day is not None:
+            if self.start_day < 1:
+                raise ValidationError({"start_day": "Start day must be >= 1."})
+            if self.end_day < self.start_day:
+                raise ValidationError({"end_day": "End day must be >= start day."})
+
+            # Check overlaps for same subject
+            overlaps = LearningPhase.objects.filter(
+                subject=self.subject,
+                start_day__lte=self.end_day,
+                end_day__gte=self.start_day
+            )
+            if self.pk:
+                overlaps = overlaps.exclude(pk=self.pk)
+
+            if overlaps.exists():
+                raise ValidationError("Overlapping phases within the same Subject are not allowed.")
+
 class Topic(models.Model):
     STATUS_DRAFT = 'draft'
     STATUS_PUBLISHED = 'published'
@@ -65,6 +105,13 @@ class Topic(models.Model):
     ]
 
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='topics')
+    learning_phase = models.ForeignKey(
+        LearningPhase,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="topics"
+    )
     name = models.CharField(max_length=200)
     summary = models.CharField(max_length=400, help_text="Short summary explaining what the learner will learn (2-4 lines max)")
     order = models.PositiveIntegerField(default=0, blank=True)
@@ -83,12 +130,19 @@ class Topic(models.Model):
         ordering = ['order', 'name']
 
     def save(self, *args, **kwargs):
+        self.clean()
         self.is_active = (self.status == self.STATUS_PUBLISHED)
         if self.pk is None and not self.order:
             from django.db.models import Max
             max_order = Topic.objects.filter(subject=self.subject).aggregate(Max('order'))['order__max']
             self.order = (max_order or 0) + 1
         super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        if self.learning_phase_id and self.subject_id:
+            if self.learning_phase.subject_id != self.subject_id:
+                raise ValidationError({"learning_phase": "Topic and Learning Phase must belong to the same Subject."})
 
     def __str__(self):
         return f"{self.subject.name} - {self.name}"
