@@ -59,7 +59,13 @@ def complete_non_assessed_topic(user, topic):
     if not topic.assessment_required or topic.active_question_count == 0:
         if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
             if is_topic_unlocked(user, topic):
-                progress, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
+                progress, _ = TopicProgress.objects.get_or_create(
+                    user=user,
+                    topic=topic,
+                    defaults={
+                        'expected_end_day_snapshot': lambda: topic.learning_phase.end_day if topic.learning_phase_id else None
+                    }
+                )
                 if progress.status != TopicProgress.STATUS_COMPLETED:
                     progress.status = TopicProgress.STATUS_COMPLETED
                     if progress.completed_at is None:
@@ -80,7 +86,11 @@ def record_topic_view(user, topic):
     progress, created = TopicProgress.objects.get_or_create(
         user=user,
         topic=topic,
-        defaults={'status': TopicProgress.STATUS_IN_PROGRESS, 'last_accessed': timezone.now()}
+        defaults={
+            'status': TopicProgress.STATUS_IN_PROGRESS,
+            'last_accessed': timezone.now(),
+            'expected_end_day_snapshot': lambda: topic.learning_phase.end_day if topic.learning_phase_id else None
+        }
     )
 
     if not created:
@@ -162,26 +172,26 @@ def annotate_progress_with_review_status(queryset):
     """
     from quizzes.models import QuizAttempt, QuizResponse
     from django.db.models import Exists, OuterRef
-    
+
     pending_responses = QuizResponse.objects.filter(
-        attempt_id=OuterRef('pk'), 
+        attempt_id=OuterRef('pk'),
         is_correct__isnull=True
     )
-    
+
     finalized_attempts = QuizAttempt.objects.filter(
         user=OuterRef('user'),
         topic_id=OuterRef('topic_id')
     ).annotate(
         has_pending=Exists(pending_responses)
     ).filter(has_pending=False)
-    
+
     pending_attempts = QuizAttempt.objects.filter(
         user=OuterRef('user'),
         topic_id=OuterRef('topic_id')
     ).annotate(
         has_pending=Exists(pending_responses)
     ).filter(has_pending=True)
-    
+
     return queryset.annotate(
         has_finalized_score=Exists(finalized_attempts),
         has_pending_review=Exists(pending_attempts)
@@ -210,13 +220,13 @@ def get_subject_progress_summary(user, subject):
         }
 
     topic_ids = [t.id for t in active_topics]
-    
+
     if user.is_authenticated:
         base_qs = TopicProgress.objects.filter(user=user, topic_id__in=topic_ids)
         user_progresses = list(annotate_progress_with_review_status(base_qs))
     else:
         user_progresses = []
-        
+
     progress_map = {p.topic_id: p for p in user_progresses}
 
     completed_count = sum(1 for p in user_progresses if p.status == TopicProgress.STATUS_COMPLETED)
@@ -254,20 +264,20 @@ def get_overall_learner_progress(user):
 
 def calculate_reconciled_fields(topic_assessment_required, attempts_data, current_status, current_completed_at):
     from progress.models import TopicProgress
-    
+
     attempts_count = len(attempts_data)
     fully_graded = [a for a in attempts_data if a['is_fully_graded']]
-    
+
     if fully_graded:
         best_score = max(a['score'] for a in fully_graded)
         latest_score = fully_graded[-1]['score']
     else:
         best_score = 0
         latest_score = 0
-        
+
     status = current_status
     completed_at = current_completed_at
-    
+
     if topic_assessment_required:
         has_passed = any(a['passed'] for a in fully_graded)
         if has_passed:
@@ -281,7 +291,7 @@ def calculate_reconciled_fields(topic_assessment_required, attempts_data, curren
         else:
             status = TopicProgress.STATUS_NOT_STARTED
             completed_at = None
-            
+
     return {
         'attempts_count': attempts_count,
         'best_score': best_score,
@@ -298,7 +308,13 @@ def reconcile_topic_progress(user, topic):
         ungraded_count=Count('responses', filter=Q(responses__is_correct__isnull=True))
     ).order_by('created_at', 'id')
 
-    tp, _ = TopicProgress.objects.get_or_create(user=user, topic=topic)
+    tp, _ = TopicProgress.objects.get_or_create(
+        user=user,
+        topic=topic,
+        defaults={
+            'expected_end_day_snapshot': lambda: topic.learning_phase.end_day if topic.learning_phase_id else None
+        }
+    )
 
     attempts_data = [
         {
@@ -340,7 +356,7 @@ def submit_quiz_attempt(user, topic, submitted_answers, session_question_ids=Non
         questions = [q_map[qid] for qid in session_question_ids if qid in q_map]
     else:
         questions = list(topic.questions.prefetch_related('choices').all())
-        
+
     total_questions = len(questions)
 
     if total_questions == 0:
@@ -371,7 +387,7 @@ def submit_quiz_attempt(user, topic, submitted_answers, session_question_ids=Non
                 is_answered = bool(raw_vals and any(str(v).strip() for v in raw_vals))
             else:
                 is_answered = bool(raw_vals and raw_vals[0].strip())
-            
+
             if not is_answered:
                 raise ValidationError(f"Question '{q.text}' is required.")
 
