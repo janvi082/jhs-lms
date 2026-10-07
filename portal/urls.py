@@ -18,6 +18,12 @@ urlpatterns = [
     path('topics/add/', views.portal_topic_add, name='portal_topic_add'),
     path('topics/reorder/', views.portal_topics_reorder, name='portal_topics_reorder'),
     path('topics/<int:topic_id>/edit/', views.portal_topic_edit, name='portal_topic_edit'),
+
+    # Learning Phases
+    path('learning-phases/', views.portal_learning_phases_list, name='portal_learning_phases_list'),
+    path('learning-phases/add/', views.portal_learning_phase_add, name='portal_learning_phase_add'),
+    path('learning-phases/<int:phase_id>/edit/', views.portal_learning_phase_edit, name='portal_learning_phase_edit'),
+    path('learning-phases/<int:phase_id>/delete/', views.portal_learning_phase_delete, name='portal_learning_phase_delete'),
     
     # Inline Videos & Materials
     path('videos/<int:video_id>/edit/', views.portal_video_edit, name='portal_video_edit'),

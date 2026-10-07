@@ -7,7 +7,7 @@ from django.db.models import ProtectedError
 import secrets
 import string
 
-from content.models import Subject, Topic, Video, Resource, SiteConfig
+from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase
 from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
 from accounts.models import User
 from progress.models import TopicProgress
@@ -23,6 +23,7 @@ from access import services as access_services
 from .forms import (
     SubjectForm,
     TopicForm,
+    LearningPhaseForm,
     TopicAddForm,
     VideoForm,
     ResourceForm,
@@ -1503,3 +1504,57 @@ def portal_settings(request):
         form = SiteConfigForm(instance=site_config)
 
     return render(request, 'portal/settings.html', {'form': form, 'site_config': site_config})
+
+# --- Learning Phases Management ---
+
+@admin_required
+def portal_learning_phases_list(request):
+    subjects = Subject.objects.prefetch_related('learning_phases').order_by('order', 'id')
+    for subject in subjects:
+        subject.sorted_phases = subject.learning_phases.all().order_by('start_day', 'id')
+
+    return TemplateResponse(request, 'portal/learning_phases_list.html', {
+        'subjects': subjects,
+    })
+
+@admin_required
+def portal_learning_phase_add(request):
+    if request.method == 'POST':
+        form = LearningPhaseForm(request.POST)
+        if form.is_valid():
+            phase = form.save()
+            messages.success(request, f"Learning phase '{phase.name}' created.")
+            return redirect('portal_learning_phases_list')
+    else:
+        form = LearningPhaseForm(initial={'subject': request.GET.get('subject')})
+    return TemplateResponse(request, 'portal/learning_phase_form.html', {
+        'form': form,
+        'title': 'Add Learning Phase'
+    })
+
+@admin_required
+def portal_learning_phase_edit(request, phase_id):
+    phase = get_object_or_404(LearningPhase, id=phase_id)
+    if request.method == 'POST':
+        form = LearningPhaseForm(request.POST, instance=phase)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Learning phase '{phase.name}' updated.")
+            return redirect('portal_learning_phases_list')
+    else:
+        form = LearningPhaseForm(instance=phase)
+    return TemplateResponse(request, 'portal/learning_phase_form.html', {
+        'form': form,
+        'title': f'Edit Learning Phase: {phase.name}'
+    })
+
+@admin_required
+def portal_learning_phase_delete(request, phase_id):
+    phase = get_object_or_404(LearningPhase, id=phase_id)
+    if request.method == 'POST':
+        phase.delete()
+        messages.success(request, "Learning phase deleted successfully.")
+        return redirect('portal_learning_phases_list')
+    return TemplateResponse(request, 'portal/learning_phase_confirm_delete.html', {
+        'phase': phase,
+    })

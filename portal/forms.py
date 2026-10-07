@@ -1,7 +1,18 @@
 from django import forms
-from content.models import Subject, Topic, Video, Resource, SiteConfig
+from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase
 from quizzes.models import Question, Choice
 from accounts.models import User
+
+class LearningPhaseForm(forms.ModelForm):
+    class Meta:
+        model = LearningPhase
+        fields = ['subject', 'name', 'start_day', 'end_day']
+        widgets = {
+            'subject': forms.Select(attrs={'class': 'form-select'}),
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Phase 1, Month 1'}),
+            'start_day': forms.NumberInput(attrs={'class': 'form-control'}),
+            'end_day': forms.NumberInput(attrs={'class': 'form-control'}),
+        }
 
 class SubjectForm(forms.ModelForm):
     class Meta:

@@ -80,6 +80,9 @@
         <a class="nav-link {% if 'quizzes' in request.path or 'question' in request.path %}active{% endif %}" href="{% url 'portal_quizzes_overview' %}" title="Quizzes">
           <i class="bi bi-patch-question"></i> <span class="nav-text">Quizzes</span>
         </a>
+        <a class="nav-link {% if 'learning-phases' in request.path %}active{% endif %}" href="{% url 'portal_learning_phases_list' %}" title="Learning Phases">
+          <i class="bi bi-calendar-range"></i> <span class="nav-text">Learning Phases</span>
+        </a>
 
 
         <div class="nav-header">Learners</div>

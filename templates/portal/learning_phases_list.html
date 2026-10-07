@@ -1,0 +1,72 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}Manage Learning Phases - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Learning Phases Management</h3>
+    <p class="text-muted mb-0">Manage training timelines and day ranges per subject.</p>
+  </div>
+  
+  <a href="{% url 'portal_learning_phase_add' %}" class="btn btn-primary text-nowrap">
+    <i class="bi bi-plus-lg me-1"></i> Add Learning Phase
+  </a>
+</div>
+
+{% for subject in subjects %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-3 border-bottom-0">
+    <h5 class="mb-0 text-dark fw-bold">{{ subject.name }}</h5>
+  </div>
+  <div class="card-body p-0">
+    {% if subject.sorted_phases %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light text-muted small text-uppercase">
+          <tr>
+            <th class="ps-4">Phase Name</th>
+            <th>Start Day</th>
+            <th>End Day</th>
+            <th>Day Range</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for phase in subject.sorted_phases %}
+          <tr>
+            <td class="ps-4 fw-medium">{{ phase.name }}</td>
+            <td>Day {{ phase.start_day }}</td>
+            <td>Day {{ phase.end_day }}</td>
+            <td><span class="badge bg-secondary text-white">{{ phase.end_day|add:"-"|add:phase.start_day|add:"1" }} Days</span></td>
+            <td class="text-end pe-4">
+              <a href="{% url 'portal_learning_phase_edit' phase.id %}" class="btn btn-sm btn-outline-primary me-1" title="Edit Phase">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <a href="{% url 'portal_learning_phase_delete' phase.id %}" class="btn btn-sm btn-outline-danger" title="Delete Phase">
+                <i class="bi bi-trash"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-center text-muted">
+      <i class="bi bi-calendar-x fs-1 d-block mb-2 text-secondary opacity-50"></i>
+      <p class="mb-3">No learning phases defined for this subject.</p>
+      <a href="{% url 'portal_learning_phase_add' %}?subject={{ subject.id }}" class="btn btn-sm btn-outline-primary">
+        Add Phase
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% empty %}
+<div class="alert alert-info border-0 shadow-sm">
+  <i class="bi bi-info-circle me-2"></i> No active subjects available to assign learning phases.
+</div>
+{% endfor %}
+
+{% endblock %}
