@@ -21,21 +21,14 @@ def get_next_topic(user, topic):
             return None
     return None
 
-def is_topic_unlocked(user, topic):
-    from access.services import has_topic_access
-    if not has_topic_access(user, topic):
-        return False
+class TopicAccessState:
+    DENIED = 'DENIED'
+    UPCOMING = 'UPCOMING'
+    LOCKED_SEQUENTIAL = 'LOCKED_SEQUENTIAL'
+    AVAILABLE = 'AVAILABLE'
+    COMPLETED = 'COMPLETED'
 
-    if getattr(user, 'is_admin_user', False):
-        return True
-
-    if TopicProgress.objects.filter(
-        user=user,
-        topic=topic,
-        status__in=[TopicProgress.STATUS_COMPLETED, TopicProgress.STATUS_IN_PROGRESS]
-    ).exists():
-        return True
-
+def _is_sequentially_unlocked(user, topic):
     effective_topics = _get_effective_progression_sequence(user, topic.subject)
 
     previous_topic = None
@@ -53,6 +46,39 @@ def is_topic_unlocked(user, topic):
         topic=previous_topic,
         status=TopicProgress.STATUS_COMPLETED
     ).exists()
+
+def get_topic_access_state(user, topic):
+    from access.services import has_topic_access
+    if not has_topic_access(user, topic):
+        return TopicAccessState.DENIED
+
+    if getattr(user, 'is_admin_user', False):
+        return TopicAccessState.AVAILABLE
+
+    progress = TopicProgress.objects.filter(user=user, topic=topic).first()
+    if progress:
+        if progress.status == TopicProgress.STATUS_COMPLETED:
+            return TopicAccessState.COMPLETED
+        if progress.status == TopicProgress.STATUS_IN_PROGRESS:
+            return TopicAccessState.AVAILABLE
+
+    if topic.learning_phase_id:
+        date_of_joining = getattr(user, 'date_of_joining', None)
+        if date_of_joining is None:
+            return TopicAccessState.DENIED
+
+        learner_day = (timezone.localdate() - date_of_joining).days + 1
+        if learner_day < topic.learning_phase.start_day:
+            return TopicAccessState.UPCOMING
+
+    if _is_sequentially_unlocked(user, topic):
+        return TopicAccessState.AVAILABLE
+
+    return TopicAccessState.LOCKED_SEQUENTIAL
+
+def is_topic_unlocked(user, topic):
+    state = get_topic_access_state(user, topic)
+    return state in (TopicAccessState.AVAILABLE, TopicAccessState.COMPLETED)
 
 def complete_non_assessed_topic(user, topic):
     from access.services import has_subject_access, has_topic_access
