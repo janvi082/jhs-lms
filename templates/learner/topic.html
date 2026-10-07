@@ -36,9 +36,14 @@
         </div>
 
         <!-- Video Tutorials -->
-        {% if videos %}
+        {% if videos or access_state == 'LOCKED_SEQUENTIAL' %}
         <div class="mb-4">
           <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-play-btn-fill text-danger me-2"></i> Video Tutorials</h5>
+          {% if access_state == 'LOCKED_SEQUENTIAL' %}
+          <div class="alert alert-light border text-muted">
+            <i class="bi bi-lock-fill me-2"></i>Videos are locked until you complete the previous topic.
+          </div>
+          {% else %}
           <div class="row g-3">
             {% for video in videos %}
             <div class="col-12">
@@ -57,7 +62,7 @@
                       </span>
                     {% endif %}
                   </div>
-                  
+
                   {% if 'youtube.com' in video.url or 'youtu.be' in video.url %}
                   <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" id="toggle-btn-{{ video.id }}" onclick="toggleYouTubePlayer('{{ video.id }}', '{{ video.url|escapejs }}')" aria-expanded="false" aria-controls="video-container-{{ video.id }}">
                     <i class="bi bi-play-circle me-1" id="toggle-icon-{{ video.id }}"></i> <span id="toggle-text-{{ video.id }}">Watch Video</span>
@@ -68,7 +73,7 @@
                   </a>
                   {% endif %}
                 </div>
-                
+
                 {% if 'youtube.com' in video.url or 'youtu.be' in video.url %}
                 <div id="video-container-{{ video.id }}" class="mt-3 d-none"></div>
                 {% endif %}
@@ -76,13 +81,19 @@
             </div>
             {% endfor %}
           </div>
+          {% endif %}
         </div>
         {% endif %}
 
         <!-- Dynamic Learning Materials -->
-        {% if resources %}
+        {% if resources or access_state == 'LOCKED_SEQUENTIAL' %}
         <div class="mb-4">
           <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-folder-fill text-primary me-2"></i> Learning Materials</h5>
+          {% if access_state == 'LOCKED_SEQUENTIAL' %}
+          <div class="alert alert-light border text-muted">
+            <i class="bi bi-lock-fill me-2"></i>Learning materials are locked until you complete the previous topic.
+          </div>
+          {% else %}
           <div class="row g-3">
             {% for res in resources %}
             <div class="col-12">
@@ -113,6 +124,7 @@
             </div>
             {% endfor %}
           </div>
+          {% endif %}
         </div>
         {% endif %}
       </div>
@@ -129,16 +141,21 @@
           Required passing score: <strong>{{ effective_passing_score }}%</strong>
         </p>
 
-        {% if is_assessment_ready %}
+        {% if access_state == 'LOCKED_SEQUENTIAL' %}
+          <div class="alert alert-warning mb-0 small">
+            <i class="bi bi-lock-fill me-1"></i>
+            Assessment Locked: Complete the previous topic to unlock.
+          </div>
+        {% elif is_assessment_ready %}
             <a href="{% url 'quiz_modal' subject.slug topic.id %}"
               class="btn btn-primary w-100 py-2 fw-semibold"
               role="button">
-            <i class="bi bi-pencil-square me-1"></i> 
+            <i class="bi bi-pencil-square me-1"></i>
             {% if progress and progress.attempts_count > 0 %}Retake Assessment{% else %}Take Assessment{% endif %}
             </a>
         {% else %}
           <div class="alert alert-secondary mb-0 small">
-            <i class="bi bi-exclamation-triangle me-1"></i> 
+            <i class="bi bi-exclamation-triangle me-1"></i>
             Assessment Pending: This topic currently has {{ question_count }} questions ({{ required_question_count }} required for quiz activation).
           </div>
         {% endif %}
@@ -220,7 +237,7 @@ function toggleYouTubePlayer(videoId, rawUrl) {
     const btnText = document.getElementById('toggle-text-' + videoId);
     const btn = document.getElementById('toggle-btn-' + videoId);
     const icon = document.getElementById('toggle-icon-' + videoId);
-    
+
     if (container.classList.contains('d-none')) {
         // Show video
         if (!container.querySelector('iframe')) {
@@ -229,14 +246,14 @@ function toggleYouTubePlayer(videoId, rawUrl) {
                 window.open(rawUrl, '_blank');
                 return;
             }
-            
+
             container.innerHTML = `
                 <div class="ratio ratio-16x9 rounded overflow-hidden shadow-sm">
                     <iframe src="${embedUrl}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
                 </div>
             `;
         }
-        
+
         container.classList.remove('d-none');
         btn.setAttribute('aria-expanded', 'true');
         btnText.innerText = 'Hide Video';
@@ -257,7 +274,7 @@ function getYouTubeEmbedUrl(url) {
         let urlObj = new URL(url);
         let videoId = null;
         let isPlaylist = false;
-        
+
         if (urlObj.hostname === 'youtu.be') {
             videoId = urlObj.pathname.substring(1);
         } else if (urlObj.hostname.includes('youtube.com') || urlObj.hostname.includes('youtube-nocookie.com')) {
@@ -267,10 +284,10 @@ function getYouTubeEmbedUrl(url) {
                 videoId = urlObj.searchParams.get('list');
                 isPlaylist = true;
             } else if (urlObj.pathname.startsWith('/embed/')) {
-                return url.replace('youtube.com', 'youtube-nocookie.com'); 
+                return url.replace('youtube.com', 'youtube-nocookie.com');
             }
         }
-        
+
         if (videoId) {
             if (isPlaylist) {
                 return `https://www.youtube-nocookie.com/embed/videoseries?list=${videoId}`;

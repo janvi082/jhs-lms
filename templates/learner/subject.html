@@ -26,7 +26,7 @@
           <p class="text-muted mb-0">{{ subject.description }}</p>
         {% endif %}
       </div>
-      
+
       <div class="col-lg-6">
         <div class="row g-3 text-center">
           <div class="col-6 col-sm-3">
@@ -69,9 +69,13 @@
 
 <div class="topic-list-group">
   {% for item in topics_data %}
-  {% if item.is_unlocked %}
+
+  {% if item.access_state == 'AVAILABLE' or item.access_state == 'COMPLETED' %}
   <a href="{% url 'topic_detail' subject.slug item.topic.id %}" class="list-group-item list-group-item-action p-3 text-decoration-none">
+  {% elif item.access_state == 'LOCKED_SEQUENTIAL' %}
+  <div class="list-group-item p-3 text-decoration-none bg-light">
   {% else %}
+  {# UPCOMING #}
   <div class="list-group-item p-3 text-decoration-none opacity-50 bg-light">
   {% endif %}
     <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
@@ -81,11 +85,13 @@
         </span>
         <div>
           <h5 class="mb-1 text-dark fw-semibold fs-6">
-            {% if not item.is_unlocked %}<i class="bi bi-lock-fill text-muted me-1"></i>{% endif %}{{ item.topic.name }}
+            {% if item.access_state != 'AVAILABLE' and item.access_state != 'COMPLETED' %}<i class="bi bi-lock-fill text-muted me-1"></i>{% endif %}{{ item.topic.name }}
           </h5>
           <p class="text-muted small mb-0 text-truncate-1" style="max-width: 600px;">{{ item.topic.summary }}</p>
-          {% if not item.is_unlocked %}
+          {% if item.access_state == 'LOCKED_SEQUENTIAL' %}
           <div class="text-muted small fw-bold mt-1">Complete the previous topic to unlock</div>
+          {% elif item.access_state == 'UPCOMING' %}
+          <div class="text-muted small fw-bold mt-1">Available from Day {{ item.topic.learning_phase.start_day }}</div>
           {% endif %}
         </div>
       </div>
@@ -96,22 +102,25 @@
             Best Score: {{ item.best_score }}%
           </span>
         {% endif %}
-        
+
         <span class="badge {{ item.display_status.badge_class }} px-3 py-2">
           {{ item.display_status.icon }} {{ item.display_status.label }}
         </span>
-        {% if not item.is_unlocked %}
-        <i class="bi bi-lock-fill text-muted"></i>
-        {% else %}
+
+        {% if item.access_state == 'AVAILABLE' or item.access_state == 'COMPLETED' %}
         <i class="bi bi-chevron-right text-muted"></i>
+        {% else %}
+        <i class="bi bi-lock-fill text-muted"></i>
         {% endif %}
       </div>
     </div>
-  {% if item.is_unlocked %}
+
+  {% if item.access_state == 'AVAILABLE' or item.access_state == 'COMPLETED' %}
   </a>
   {% else %}
   </div>
   {% endif %}
+
   {% empty %}
   <div class="text-center py-5 bg-white rounded border">
     <i class="bi bi-journal-x text-muted display-4"></i>

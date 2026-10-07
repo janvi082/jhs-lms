@@ -13,6 +13,8 @@ from progress.services import (
     get_subject_progress_summary,
     get_overall_learner_progress,
     is_topic_unlocked,
+    get_topic_access_state,
+    TopicAccessState,
     get_next_topic,
 )
 from access.services import has_subject_access, has_topic_access, has_video_access, has_resource_access
@@ -80,7 +82,7 @@ def subject_detail(request, slug):
             'display_status': display_status,
             'best_score': prog.best_score if prog and prog.attempts_count > 0 and getattr(prog, 'has_finalized_score', True) else None,
             'is_ready': topic.is_assessment_ready(),
-            'is_unlocked': is_topic_unlocked(request.user, topic),
+            'access_state': get_topic_access_state(request.user, topic),
         })
         
     summary = get_subject_progress_summary(request.user, subject)
@@ -99,19 +101,26 @@ def topic_detail(request, slug, topic_id):
     # Access control: deny if learner lacks access to the topic
     if not has_topic_access(request.user, topic):
         raise PermissionDenied
-    # Progression lock: deny if topic is locked
-    if not is_topic_unlocked(request.user, topic):
+    # Access state handling
+    access_state = get_topic_access_state(request.user, topic)
+    if access_state in (TopicAccessState.DENIED, TopicAccessState.UPCOMING):
         raise PermissionDenied
-    # Record view and flip status to in_progress if not_started
-    progress = record_topic_view(request.user, topic)
-    display_status = get_topic_display_status(progress)
 
-    if request.user.is_admin_user:
-        videos = list(topic.videos.all())
-        resources = list(topic.resources.all())
+    if access_state == TopicAccessState.LOCKED_SEQUENTIAL:
+        progress = TopicProgress.objects.filter(user=request.user, topic=topic).first()
+        videos = []
+        resources = []
     else:
-        videos = [v for v in topic.videos.all() if has_video_access(request.user, v)]
-        resources = [r for r in topic.resources.all() if has_resource_access(request.user, r)]
+        # Record view and flip status to in_progress if not_started
+        progress = record_topic_view(request.user, topic)
+        if request.user.is_admin_user:
+            videos = list(topic.videos.all())
+            resources = list(topic.resources.all())
+        else:
+            videos = [v for v in topic.videos.all() if has_video_access(request.user, v)]
+            resources = [r for r in topic.resources.all() if has_resource_access(request.user, r)]
+
+    display_status = get_topic_display_status(progress)
     # Prepare attempt data with review-aware display
 
     attempts_qs = QuizAttempt.objects.filter(user=request.user, topic=topic).order_by('-created_at')
@@ -144,6 +153,7 @@ def topic_detail(request, slug, topic_id):
     context = {
         'subject': topic.subject,
         'topic': topic,
+        'access_state': access_state,
         'progress': progress,
         'display_status': display_status,
         'videos': videos,
