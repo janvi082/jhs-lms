@@ -32,9 +32,10 @@ class SubjectForm(forms.ModelForm):
 class TopicForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'name', 'summary', 'status', 'passing_score_override', 'assessment_required']
+        fields = ['subject', 'learning_phase', 'name', 'summary', 'status', 'passing_score_override', 'assessment_required']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
+            'learning_phase': forms.Select(attrs={'class': 'form-select'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Email Etiquette'}),
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary explaining what the learner will learn...'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
@@ -42,25 +43,57 @@ class TopicForm(forms.ModelForm):
             'assessment_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
+            'learning_phase': 'Learning Phase',
             'status': 'Publication Status',
             'passing_score_override': 'Passing Score Override (%)',
             'assessment_required': 'Assessment Required',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.is_bound:
+            if 'subject' in self.data:
+                try:
+                    subject_id = int(self.data.get('subject'))
+                    self.fields['learning_phase'].queryset = LearningPhase.objects.filter(subject_id=subject_id)
+                except (ValueError, TypeError):
+                    self.fields['learning_phase'].queryset = LearningPhase.objects.none()
+            else:
+                self.fields['learning_phase'].queryset = LearningPhase.objects.none()
+        else:
+            self.fields['learning_phase'].queryset = LearningPhase.objects.all()
+
 class TopicAddForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'name', 'summary', 'passing_score_override', 'assessment_required']
+        fields = ['subject', 'learning_phase', 'name', 'summary', 'passing_score_override', 'assessment_required']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
+            'learning_phase': forms.Select(attrs={'class': 'form-select'}),
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Email Etiquette'}),
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary...'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
             'assessment_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
+            'learning_phase': 'Learning Phase',
             'passing_score_override': 'Passing Score Override (%)',
             'assessment_required': 'Assessment Required',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.is_bound:
+            if 'subject' in self.data:
+                try:
+                    subject_id = int(self.data.get('subject'))
+                    self.fields['learning_phase'].queryset = LearningPhase.objects.filter(subject_id=subject_id)
+                except (ValueError, TypeError):
+                    self.fields['learning_phase'].queryset = LearningPhase.objects.none()
+            else:
+                self.fields['learning_phase'].queryset = LearningPhase.objects.none()
+        else:
+            self.fields['learning_phase'].queryset = LearningPhase.objects.all()
 
 
 class VideoForm(forms.ModelForm):

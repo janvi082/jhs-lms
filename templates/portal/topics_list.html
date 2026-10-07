@@ -205,6 +205,10 @@ document.addEventListener('DOMContentLoaded', function() {
             {{ form.subject }}
           </div>
           <div class="mb-3">
+            <label class="form-label fw-semibold">Learning Phase</label>
+            {{ form.learning_phase }}
+          </div>
+          <div class="mb-3">
             <label class="form-label fw-semibold">Topic Name</label>
             {{ form.name }}
           </div>
@@ -490,4 +494,46 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const subjectSelect = document.getElementById('id_subject');
+    const phaseSelect = document.getElementById('id_learning_phase');
+    if (!subjectSelect || !phaseSelect) return;
+
+    const phaseMap = {
+        {% for phase in form.fields.learning_phase.queryset %}
+        "{{ phase.id }}": "{{ phase.subject_id }}",
+        {% endfor %}
+    };
+
+    function filterPhases() {
+        const subjectId = subjectSelect.value;
+        const currentValue = phaseSelect.value;
+        let keepCurrent = false;
+
+        Array.from(phaseSelect.options).forEach(opt => {
+            if (!opt.value) {
+                opt.style.display = '';
+                opt.disabled = false;
+                return;
+            }
+            if (phaseMap[opt.value] === subjectId) {
+                opt.style.display = '';
+                opt.disabled = false;
+                if (opt.value === currentValue) keepCurrent = true;
+            } else {
+                opt.style.display = 'none';
+                opt.disabled = true;
+            }
+        });
+
+        if (!keepCurrent) {
+            phaseSelect.value = '';
+        }
+    }
+
+    subjectSelect.addEventListener('change', filterPhases);
+    filterPhases();
+});
+</script>
 {% endblock %}
