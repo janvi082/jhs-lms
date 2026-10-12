@@ -1,0 +1,100 @@
+{% extends 'portal/base_portal.html' %}
+
+{% block title %}Confirm Reassignment - JHS Admin Portal{% endblock %}
+
+{% block portal_content %}
+<style>
+  .fw-450 { font-weight: 450 !important; }
+</style>
+<div class="mb-4">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+    <a href="{% url 'portal_phase_assign_topics' phase.id %}" class="btn btn-secondary btn-sm text-nowrap">
+      <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'portal_learning_phases_list' %}">Learning Phases</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'portal_phase_assign_topics' phase.id %}">Assign Topics</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Confirm Reassignment</li>
+      </ol>
+    </nav>
+  </div>
+  <h3 class="fw-bold text-dark mb-0">Confirm Topic Reassignments</h3>
+</div>
+
+<div class="alert alert-warning border-warning shadow-sm py-2 px-3 mb-3">
+  <h6 class="alert-heading fw-450 mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i> Warning: Learner access may change</h6>
+  <p class="mb-0 fw-normal small">You are about to move topics that are already assigned to other phases, or unassign topics from this phase. This can immediately change which topics are locked or unlocked for learners.</p>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white py-3">
+    <h5 class="mb-0 text-dark fw-bold">Review Changes for: <span class="fw-450">{{ phase.name }}</span></h5>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light fw-450">
+          <tr>
+            <th>Topic</th>
+            <th class="d-none d-md-table-cell">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in conflicts %}
+          <tr>
+            <td class="fw-450">
+              {{ t.name }}
+              <div class="d-md-none mt-1 small">
+                <span class="text-danger fw-normal">Moving from {{ t.learning_phase.name }}</span> 
+                <i class="bi bi-arrow-right mx-1 text-muted"></i> 
+                <span class="text-success fw-normal">{{ phase.name }}</span>
+              </div>
+            </td>
+            <td class="d-none d-md-table-cell">
+              <span class="text-danger fw-normal">Moving from {{ t.learning_phase.name }}</span> 
+              <i class="bi bi-arrow-right mx-2 text-muted"></i> 
+              <span class="text-success fw-normal">{{ phase.name }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+          {% for t in unassignments %}
+          <tr>
+            <td class="fw-450">
+              {{ t.name }}
+              <div class="d-md-none mt-1 small">
+                <span class="text-danger fw-normal">Removing from {{ phase.name }}</span> 
+                <i class="bi bi-arrow-right mx-1 text-muted"></i> 
+                <span class="text-muted fw-normal">Not assigned</span>
+              </div>
+            </td>
+            <td class="d-none d-md-table-cell">
+              <span class="text-danger fw-normal">Removing from {{ phase.name }}</span> 
+              <i class="bi bi-arrow-right mx-2 text-muted"></i> 
+              <span class="text-muted fw-normal">Not assigned</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-footer bg-white py-3">
+    <form method="post" action="{% url 'portal_phase_assign_topics' phase.id %}" class="d-flex flex-column flex-md-row justify-content-md-end gap-2">
+      {% csrf_token %}
+      {% for tid in proposed_topic_ids %}
+      <input type="hidden" name="topic_ids" value="{{ tid }}">
+      {% endfor %}
+      {% for t in conflicts %}
+      <input type="hidden" name="expected_phase_{{ t.id }}" value="{{ t.learning_phase_id }}">
+      {% endfor %}
+      {% for t in unassignments %}
+      <input type="hidden" name="expected_phase_{{ t.id }}" value="{{ t.learning_phase_id }}">
+      {% endfor %}
+      <input type="hidden" name="confirm" value="true">
+      <a href="{% url 'portal_phase_assign_topics' phase.id %}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-danger">Confirm Reassignment</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

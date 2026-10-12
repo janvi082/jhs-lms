@@ -2,12 +2,12 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.template.response import TemplateResponse
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import ProtectedError
 import secrets
 import string
 
-from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase
+from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase, PhaseName
 from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
 from accounts.models import User
 from progress.models import TopicProgress
@@ -32,6 +32,7 @@ from .forms import (
     LearnerPasswordResetForm,
     LearnerEditForm,
     SiteConfigForm,
+    PhaseNameForm,
     LearnerAccessForm,
 )
 
@@ -42,7 +43,7 @@ from .forms import (
 def portal_subjects_list(request):
     subjects = Subject.objects.all().order_by('order', 'name')
     form = SubjectForm()
-    
+
     context = {
         'subjects': subjects,
         'form': form,
@@ -106,30 +107,30 @@ def portal_subjects_reorder(request):
             subject_ids = data.get('subject_ids', [])
         except json.JSONDecodeError:
             return JsonResponse({'status': 'error', 'message': 'Invalid JSON format.'}, status=400)
-            
+
         if not subject_ids:
             return JsonResponse({'status': 'error', 'message': 'No subject IDs provided.'}, status=400)
-            
+
         try:
             subject_ids = [int(sid) for sid in subject_ids]
         except ValueError:
             return JsonResponse({'status': 'error', 'message': 'Invalid subject IDs format.'}, status=400)
-            
+
         with transaction.atomic():
             current_subjects = list(Subject.objects.values_list('id', flat=True))
-            
+
             if len(subject_ids) != len(current_subjects):
                 return JsonResponse({'status': 'error', 'message': 'Submitted list length does not match existing subjects.'}, status=400)
-                
+
             if set(subject_ids) != set(current_subjects):
                 return JsonResponse({'status': 'error', 'message': 'Submitted IDs do not exactly match existing subjects.'}, status=400)
-                
+
             if len(subject_ids) != len(set(subject_ids)):
                 return JsonResponse({'status': 'error', 'message': 'Duplicate IDs found in submission.'}, status=400)
-                
+
             for index, sid in enumerate(subject_ids, start=1):
                 Subject.objects.filter(id=sid).update(order=index)
-                
+
         return JsonResponse({'status': 'ok', 'message': 'Subject order saved successfully.'})
     return HttpResponseBadRequest("POST required")
 
@@ -139,11 +140,11 @@ def portal_subjects_reorder(request):
 def portal_topics_list(request, subject_id=None):
     if subject_id:
         selected_subject = get_object_or_404(Subject, id=subject_id)
-        topics = Topic.objects.filter(subject=selected_subject).order_by('order', 'id')
+        topics = Topic.objects.filter(subject=selected_subject).select_related('learning_phase').order_by('order', 'id')
     else:
         selected_subject = None
-        topics = Topic.objects.select_related('subject').all().order_by('subject__order', 'order', 'id')
-        
+        topics = Topic.objects.select_related('subject', 'learning_phase').all().order_by('subject__order', 'order', 'id')
+
     subjects = Subject.objects.filter(is_active=True)
     form = TopicAddForm(initial={'subject': selected_subject} if selected_subject else {})
 
@@ -169,7 +170,7 @@ def portal_topic_add(request):
             return redirect('portal_topic_edit', topic_id=topic.id)
         # Failure: render topics list with bound form and modal flag
         selected_subject = None
-        topics = Topic.objects.select_related('subject').all().order_by('subject__order', 'order', 'id')
+        topics = Topic.objects.select_related('subject', 'learning_phase').all().order_by('subject__order', 'order', 'id')
         subjects = Subject.objects.filter(is_active=True)
         context = {
             'topics': topics,
@@ -194,34 +195,34 @@ def portal_topics_reorder(request):
 
         if not subject_id:
             return JsonResponse({'status': 'error', 'message': 'Subject ID is required.'}, status=400)
-        
+
         if not topic_ids:
             return JsonResponse({'status': 'error', 'message': 'No topic IDs provided.'}, status=400)
-            
+
         try:
             subject_id = int(subject_id)
             topic_ids = [int(tid) for tid in topic_ids]
         except ValueError:
             return JsonResponse({'status': 'error', 'message': 'Invalid ID format.'}, status=400)
-            
+
         if not Subject.objects.filter(id=subject_id).exists():
             return JsonResponse({'status': 'error', 'message': 'Subject does not exist.'}, status=400)
 
         with transaction.atomic():
             current_topics = list(Topic.objects.filter(subject_id=subject_id).values_list('id', flat=True))
-            
+
             if len(topic_ids) != len(current_topics):
                 return JsonResponse({'status': 'error', 'message': 'Submitted list length does not match existing topics.'}, status=400)
-                
+
             if set(topic_ids) != set(current_topics):
                 return JsonResponse({'status': 'error', 'message': 'Submitted IDs do not exactly match existing topics for this subject.'}, status=400)
-                
+
             if len(topic_ids) != len(set(topic_ids)):
                 return JsonResponse({'status': 'error', 'message': 'Duplicate IDs found in submission.'}, status=400)
-                
+
             for index, tid in enumerate(topic_ids, start=1):
                 Topic.objects.filter(id=tid).update(order=index)
-                
+
         return JsonResponse({'status': 'ok', 'message': 'Topic order saved successfully.'})
     return HttpResponseBadRequest("POST required")
 
@@ -233,7 +234,7 @@ def portal_topic_edit(request, topic_id):
     site_config = SiteConfig.get_solo()
     required_count = site_config.default_required_question_count
     current_question_count = topic.active_question_count
-    
+
     if request.method == 'POST':
         form = TopicForm(request.POST, instance=topic)
         if form.is_valid():
@@ -291,7 +292,7 @@ def portal_topic_edit(request, topic_id):
     videos = topic.videos.all().order_by('order', 'id')
     resources = topic.resources.all().order_by('order', 'id')
     questions = topic.questions.filter(is_active=True).order_by('order', 'id')
-    
+
     video_form = VideoForm()
     resource_form = ResourceForm()
 
@@ -458,7 +459,7 @@ def portal_question_add(request, topic_id):
         question_type = request.POST.get('question_type', Question.TYPE_SINGLE_CHOICE)
         is_required = request.POST.get('required') in ('true', 'True', 'on', '1') or 'required' in request.POST
         accepted_answers = request.POST.get('accepted_answers', '').strip()
-        
+
         if not question_text:
             messages.error(request, "Question text cannot be empty.")
             site_config = SiteConfig.get_solo()
@@ -470,8 +471,8 @@ def portal_question_add(request, topic_id):
 
         if question_type == Question.TYPE_SINGLE_CHOICE:
             choice_texts = [
-                request.POST.get(f'choice_{i}', '').strip() 
-                for i in range(1, 7) 
+                request.POST.get(f'choice_{i}', '').strip()
+                for i in range(1, 7)
                 if request.POST.get(f'choice_{i}', '').strip()
             ]
             correct_index = request.POST.get('correct_choice')
@@ -518,8 +519,8 @@ def portal_question_add(request, topic_id):
 
         elif question_type == Question.TYPE_MULTIPLE_CHOICE:
             choice_texts = [
-                request.POST.get(f'choice_{i}', '').strip() 
-                for i in range(1, 7) 
+                request.POST.get(f'choice_{i}', '').strip()
+                for i in range(1, 7)
                 if request.POST.get(f'choice_{i}', '').strip()
             ]
             correct_indices = [
@@ -611,12 +612,12 @@ def portal_question_edit(request, question_id):
         question_type = request.POST.get('question_type', Question.TYPE_SINGLE_CHOICE)
         is_required = request.POST.get('required') in ('true', 'True', 'on', '1') or 'required' in request.POST
         accepted_answers = request.POST.get('accepted_answers', '').strip()
-        
+
         def render_error(msg):
             messages.error(request, msg)
             submitted_data = request.POST.copy()
             submitted_data['correct_choices_list'] = request.POST.getlist('correct_choices')
-            
+
             context = get_topic_questions_context(topic)
             context.update({
                 'editing_question_id': question.id,
@@ -667,7 +668,7 @@ def portal_question_edit(request, question_id):
             if current_question_used:
                 question.is_active = False
                 question.save(update_fields=['is_active'])
-                
+
                 new_question = Question.objects.create(
                     topic=topic,
                     text=question_text,
@@ -678,7 +679,7 @@ def portal_question_edit(request, question_id):
                     order=question.order
                 )
                 messages.success(request, 'Question edited. A new version was created to preserve historical attempts.')
-                
+
                 # Create choices for new question
                 if question_type == Question.TYPE_SINGLE_CHOICE:
                     for idx, c_text in choice_texts:
@@ -689,7 +690,7 @@ def portal_question_edit(request, question_id):
                 elif question_type == Question.TYPE_TRUE_FALSE:
                     Choice.objects.create(question=new_question, text='True', is_correct=(tf_correct == 'true'))
                     Choice.objects.create(question=new_question, text='False', is_correct=(tf_correct == 'false'))
-                    
+
             else:
                 new_question = question
                 new_question.text = question_text
@@ -698,9 +699,9 @@ def portal_question_edit(request, question_id):
                 new_question.accepted_answers = accepted_answers if question_type == Question.TYPE_SHORT_ANSWER else ''
                 new_question.save()
                 messages.success(request, 'Question updated successfully.')
-                
+
                 existing_choices = {str(c.id): c for c in new_question.choices.all()}
-                
+
                 if question_type == Question.TYPE_SINGLE_CHOICE or question_type == Question.TYPE_MULTIPLE_CHOICE:
                     submitted_choice_ids = []
                     for i in range(1, 7):
@@ -709,7 +710,7 @@ def portal_question_edit(request, question_id):
                             continue
                         c_id = request.POST.get(f'choice_id_{i}')
                         is_correct = (i == correct_idx) if question_type == Question.TYPE_SINGLE_CHOICE else (i in correct_indices)
-                        
+
                         if c_id and c_id in existing_choices:
                             c = existing_choices.pop(c_id)
                             c.text = c_text
@@ -717,11 +718,11 @@ def portal_question_edit(request, question_id):
                             c.save()
                         else:
                             Choice.objects.create(question=new_question, text=c_text, is_correct=is_correct)
-                            
+
                     # Delete any remaining choices that were removed by the admin
                     for c in existing_choices.values():
                         c.delete()
-                        
+
                 elif question_type == Question.TYPE_TRUE_FALSE:
                     # Update true/false existing choices or recreate if not exact match
                     if len(existing_choices) == 2:
@@ -735,12 +736,12 @@ def portal_question_edit(request, question_id):
                                 c.is_correct = (tf_correct == 'false')
                                 c.save()
                                 existing_choices.pop(str(c.id))
-                    
+
                     if existing_choices: # If format was weird, just wipe and recreate
                         new_question.choices.all().delete()
                         Choice.objects.create(question=new_question, text='True', is_correct=(tf_correct == 'true'))
                         Choice.objects.create(question=new_question, text='False', is_correct=(tf_correct == 'false'))
-                        
+
                 elif question_type in [Question.TYPE_SHORT_ANSWER, Question.TYPE_PARAGRAPH]:
                     new_question.choices.all().delete()
 
@@ -754,9 +755,9 @@ def portal_question_delete(request, question_id):
         if not question.is_active:
             messages.error(request, "This question is already retired.")
             return redirect('portal_questions_manage', topic_id=topic_id)
-            
+
         current_question_used = QuizResponse.objects.filter(question=question).exists()
-        
+
         if current_question_used:
             question.is_active = False
             question.save(update_fields=['is_active'])
@@ -782,34 +783,34 @@ def portal_questions_reorder(request):
 
         if not topic_id:
             return JsonResponse({'success': False, 'error': 'Topic ID is required.'}, status=400)
-        
+
         if not question_ids:
             return JsonResponse({'success': False, 'error': 'No question IDs provided.'}, status=400)
-            
+
         try:
             topic_id = int(topic_id)
             question_ids = [int(qid) for qid in question_ids]
         except ValueError:
             return JsonResponse({'success': False, 'error': 'Invalid ID format.'}, status=400)
-            
+
         if not Topic.objects.filter(id=topic_id).exists():
             return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
 
         with transaction.atomic():
             current_questions = list(Question.objects.filter(topic_id=topic_id, is_active=True).values_list('id', flat=True))
-            
+
             if len(question_ids) != len(current_questions):
                 return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing questions.'}, status=400)
-                
+
             if len(question_ids) != len(set(question_ids)):
                 return JsonResponse({'success': False, 'error': 'Duplicate IDs found in submission.'}, status=400)
-                
+
             if set(question_ids) != set(current_questions):
                 return JsonResponse({'success': False, 'error': 'Submitted IDs do not exactly match existing questions for this topic.'}, status=400)
-                
+
             for index, qid in enumerate(question_ids, start=1):
                 Question.objects.filter(id=qid).update(order=index)
-                
+
         return JsonResponse({'success': True})
     return HttpResponseBadRequest("POST required")
 
@@ -819,11 +820,11 @@ def portal_questions_reorder(request):
 def portal_videos_overview(request):
     subject_id = request.GET.get('subject_id')
     topic_id = request.GET.get('topic_id')
-    
+
     selected_subject = None
     selected_topic = None
     videos = Video.objects.select_related('topic__subject').all()
-    
+
     if subject_id:
         from content.models import Subject
         try:
@@ -831,7 +832,7 @@ def portal_videos_overview(request):
         except (ValueError, Subject.DoesNotExist):
             selected_subject = None
             subject_id = None
-            
+
     if topic_id:
         try:
             selected_topic = Topic.objects.get(id=topic_id)
@@ -849,15 +850,15 @@ def portal_videos_overview(request):
         videos = videos.filter(topic__subject=selected_subject).order_by('topic__order', 'order', 'id')
     else:
         videos = videos.order_by('topic__subject__order', 'topic__order', 'order', 'id')
-        
+
     from content.models import Subject
     subjects = Subject.objects.all().order_by('order', 'id')
-    
+
     topics = Topic.objects.select_related('subject').all()
     if selected_subject:
         topics = topics.filter(subject=selected_subject)
     topics = topics.order_by('subject__order', 'order')
-    
+
     return render(request, 'portal/videos_list.html', {
         'videos': videos,
         'subjects': subjects,
@@ -879,34 +880,34 @@ def portal_videos_reorder(request):
 
         if not topic_id:
             return JsonResponse({'success': False, 'error': 'Topic ID is required.'}, status=400)
-        
+
         if not video_ids:
             return JsonResponse({'success': False, 'error': 'No video IDs provided.'}, status=400)
-            
+
         try:
             topic_id = int(topic_id)
             video_ids = [int(vid) for vid in video_ids]
         except ValueError:
             return JsonResponse({'success': False, 'error': 'Invalid ID format.'}, status=400)
-            
+
         if not Topic.objects.filter(id=topic_id).exists():
             return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
 
         with transaction.atomic():
             current_videos = list(Video.objects.filter(topic_id=topic_id).values_list('id', flat=True))
-            
+
             if len(video_ids) != len(current_videos):
                 return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing videos.'}, status=400)
-                
+
             if len(video_ids) != len(set(video_ids)):
                 return JsonResponse({'success': False, 'error': 'Duplicate IDs found in submission.'}, status=400)
-                
+
             if set(video_ids) != set(current_videos):
                 return JsonResponse({'success': False, 'error': 'Submitted IDs do not exactly match existing videos for this topic.'}, status=400)
-                
+
             for index, vid in enumerate(video_ids, start=1):
                 Video.objects.filter(id=vid).update(order=index)
-                
+
         return JsonResponse({'success': True})
     return HttpResponseBadRequest("POST required")
 @admin_required
@@ -926,37 +927,37 @@ def portal_resources_reorder(request):
 
         if not topic_id:
             return JsonResponse({'success': False, 'error': 'Topic ID is required.'}, status=400)
-        
+
         if not isinstance(resource_ids, list):
             return JsonResponse({'success': False, 'error': 'resource_ids must be a list.'}, status=400)
-        
+
         if not resource_ids:
             return JsonResponse({'success': False, 'error': 'No resource IDs provided.'}, status=400)
-            
+
         try:
             topic_id = int(topic_id)
             resource_ids = [int(rid) for rid in resource_ids]
         except (TypeError, ValueError):
             return JsonResponse({'success': False, 'error': 'Invalid ID format.'}, status=400)
-            
+
         if not Topic.objects.filter(id=topic_id).exists():
             return JsonResponse({'success': False, 'error': 'Topic does not exist.'}, status=400)
 
         with transaction.atomic():
             current_resources = list(Resource.objects.filter(topic_id=topic_id).values_list('id', flat=True))
-            
+
             if len(resource_ids) != len(current_resources):
                 return JsonResponse({'success': False, 'error': 'Submitted list length does not match existing resources.'}, status=400)
-                
+
             if len(resource_ids) != len(set(resource_ids)):
                 return JsonResponse({'success': False, 'error': 'Duplicate IDs found in submission.'}, status=400)
-                
+
             if set(resource_ids) != set(current_resources):
                 return JsonResponse({'success': False, 'error': 'Submitted IDs do not exactly match existing resources for this topic.'}, status=400)
-                
+
             for index, rid in enumerate(resource_ids, start=1):
                 Resource.objects.filter(id=rid).update(order=index)
-                
+
         return JsonResponse({'success': True})
     return HttpResponseBadRequest("POST required")
 
@@ -964,11 +965,11 @@ def portal_resources_reorder(request):
 def portal_materials_overview(request):
     subject_id = request.GET.get('subject_id')
     topic_id = request.GET.get('topic_id')
-    
+
     selected_subject = None
     selected_topic = None
     materials = Resource.objects.select_related('topic__subject').all()
-    
+
     if subject_id:
         from content.models import Subject
         try:
@@ -976,7 +977,7 @@ def portal_materials_overview(request):
         except (ValueError, Subject.DoesNotExist):
             selected_subject = None
             subject_id = None
-            
+
     if topic_id:
         try:
             selected_topic = Topic.objects.get(id=topic_id)
@@ -994,15 +995,15 @@ def portal_materials_overview(request):
         materials = materials.filter(topic__subject=selected_subject).order_by('topic__order', 'order', 'id')
     else:
         materials = materials.order_by('topic__subject__order', 'topic__order', 'order', 'id')
-        
+
     from content.models import Subject
     subjects = Subject.objects.all().order_by('order', 'id')
-    
+
     topics = Topic.objects.select_related('subject').all()
     if selected_subject:
         topics = topics.filter(subject=selected_subject)
     topics = topics.order_by('subject__order', 'order')
-    
+
     return render(request, 'portal/materials_list.html', {
         'materials': materials,
         'subjects': subjects,
@@ -1015,11 +1016,11 @@ def portal_materials_overview(request):
 def portal_quizzes_overview(request):
     subject_id = request.GET.get('subject_id')
     topic_id = request.GET.get('topic_id')
-    
+
     selected_subject = None
     selected_topic = None
     topics_queryset = Topic.objects.select_related('subject').prefetch_related('questions').all()
-    
+
     if subject_id:
         from content.models import Subject
         try:
@@ -1027,7 +1028,7 @@ def portal_quizzes_overview(request):
         except (ValueError, Subject.DoesNotExist):
             selected_subject = None
             subject_id = None
-            
+
     if topic_id:
         try:
             selected_topic = Topic.objects.get(id=topic_id)
@@ -1045,17 +1046,17 @@ def portal_quizzes_overview(request):
         topics_queryset = topics_queryset.filter(subject=selected_subject).order_by('order', 'id')
     else:
         topics_queryset = topics_queryset.order_by('subject__order', 'order', 'id')
-        
+
     from content.models import Subject
     subjects = Subject.objects.all().order_by('order', 'id')
-    
+
     topics_for_dropdown = Topic.objects.select_related('subject').all()
     if selected_subject:
         topics_for_dropdown = topics_for_dropdown.filter(subject=selected_subject)
     topics_for_dropdown = topics_for_dropdown.order_by('subject__order', 'order')
 
     site_config = SiteConfig.get_solo()
-    
+
     quiz_data = []
     for t in topics_queryset:
         q_count = t.active_question_count
@@ -1064,9 +1065,9 @@ def portal_quizzes_overview(request):
             'question_count': q_count,
             'is_ready': q_count >= site_config.default_required_question_count,
         })
-        
+
     return render(request, 'portal/quizzes_list.html', {
-        'quiz_data': quiz_data, 
+        'quiz_data': quiz_data,
         'required_count': site_config.default_required_question_count,
         'subjects': subjects,
         'topics': topics_for_dropdown,
@@ -1209,7 +1210,7 @@ def admin_attempt_review(request, attempt_id, response_id):
 def portal_learners_list(request):
     learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
     learners_data = [{'learner': l} for l in learners]
-        
+
     form = LearnerForm()
     empty_reset_form = LearnerPasswordResetForm()
     context = {
@@ -1223,14 +1224,14 @@ def portal_learners_list(request):
 def portal_progress_list(request):
     learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
     learners_data = []
-    
+
     for l in learners:
         prog = get_overall_learner_progress(l)
         learners_data.append({
             'learner': l,
             'overall_progress': prog,
         })
-        
+
     context = {
         'learners_data': learners_data,
     }
@@ -1261,7 +1262,7 @@ def portal_learner_edit(request, learner_id):
             form.save()
             messages.success(request, f"Learner details for @{learner.username} updated successfully.")
             return redirect('portal_learners_list')
-        
+
         # Validation failure
         learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
         learners_data = [{'learner': l} for l in learners]
@@ -1309,7 +1310,7 @@ def portal_learner_reset_password(request, learner_id):
             learner.save()
             messages.success(request, f"Password reset successfully for @{learner.username}.")
             return redirect('portal_learners_list')
-        
+
         # Validation failure
         learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
         learners_data = [{'learner': l} for l in learners]
@@ -1343,12 +1344,12 @@ def portal_learner_reset_password(request, learner_id):
 def portal_learner_progress_detail(request, learner_id):
     learner = get_object_or_404(User, id=learner_id)
     active_subjects = Subject.objects.filter(is_active=True)
-    
+
     subjects_breakdown = []
     for subject in active_subjects:
         topics = subject.topics.filter(status=Topic.STATUS_PUBLISHED)
         user_progs = {p.topic_id: p for p in TopicProgress.objects.filter(user=learner, topic__in=topics)}
-        
+
         topics_info = []
         for topic in topics:
             prog = user_progs.get(topic.id)
@@ -1358,16 +1359,16 @@ def portal_learner_progress_detail(request, learner_id):
                 'progress': prog,
                 'display_status': disp,
             })
-            
+
         summary = get_subject_progress_summary(learner, subject)
         subjects_breakdown.append({
             'subject': subject,
             'summary': summary,
             'topics_info': topics_info,
         })
-        
+
     overall_progress = get_overall_learner_progress(learner)
-    
+
     context = {
         'learner': learner,
         'subjects_breakdown': subjects_breakdown,
@@ -1503,19 +1504,122 @@ def portal_settings(request):
     else:
         form = SiteConfigForm(instance=site_config)
 
-    return render(request, 'portal/settings.html', {'form': form, 'site_config': site_config})
+    phase_names = PhaseName.objects.all().order_by('name')
+    phase_name_form = PhaseNameForm()
+
+    return render(request, 'portal/settings.html', {
+        'form': form,
+        'site_config': site_config,
+        'phase_names': phase_names,
+        'phase_name_form': phase_name_form
+    })
 
 # --- Learning Phases Management ---
 
+def _is_phase_name_unique_violation(exc):
+    diag = getattr(getattr(exc, '__cause__', None), 'diag', None)
+    constraint = getattr(diag, 'constraint_name', None)
+    return constraint == 'unique_ci_phase_name'
+
+@admin_required
+def portal_settings_phase_add(request):
+    if request.method == 'POST':
+        form = PhaseNameForm(request.POST)
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    form.save()
+                messages.success(request, f"Phase name '{form.cleaned_data['name']}' added.")
+            except IntegrityError as e:
+                if _is_phase_name_unique_violation(e):
+                    messages.error(request, 'A phase name with this value already exists.')
+                else:
+                    raise
+        else:
+            for err in form.errors.values():
+                messages.error(request, err[0])
+    return redirect('portal_settings')
+
+@admin_required
+def portal_settings_phase_edit(request, phase_id):
+    phase_name = get_object_or_404(PhaseName, id=phase_id)
+    if request.method == 'POST':
+        form = PhaseNameForm(request.POST, instance=phase_name)
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    form.save()
+                messages.success(request, f"Phase name updated to '{form.cleaned_data['name']}'.")
+            except IntegrityError as e:
+                if _is_phase_name_unique_violation(e):
+                    messages.error(request, 'A phase name with this value already exists.')
+                else:
+                    raise
+        else:
+            for err in form.errors.values():
+                messages.error(request, err[0])
+    return redirect('portal_settings')
+
+@admin_required
+def portal_settings_phase_delete(request, phase_id):
+    phase_name = get_object_or_404(PhaseName, id=phase_id)
+    if request.method == 'POST':
+        name = phase_name.name
+        phase_name.delete()
+        messages.success(request, f"Phase name '{name}' removed from the dictionary.")
+    return redirect('portal_settings')
+
 @admin_required
 def portal_learning_phases_list(request):
-    subjects = Subject.objects.prefetch_related('learning_phases').order_by('order', 'id')
+    subject_id = request.GET.get('subject')
+    phase_id = request.GET.get('phase')
+
+    subjects_qs = Subject.objects.filter(is_active=True).order_by('order', 'id')
+    all_subjects = list(subjects_qs)
+
+    if subject_id and subject_id.isdigit():
+        subjects_qs = subjects_qs.filter(id=subject_id)
+
+    subjects = list(subjects_qs.prefetch_related('learning_phases', 'learning_phases__topics'))
+
+    all_phases = LearningPhase.objects.select_related('subject').order_by('subject__order', 'start_day', 'id')
+
     for subject in subjects:
-        subject.sorted_phases = subject.learning_phases.all().order_by('start_day', 'id')
+        phases = subject.learning_phases.all().order_by('start_day', 'id')
+        if phase_id and phase_id.isdigit():
+            phases = [p for p in phases if p.id == int(phase_id)]
+        subject.sorted_phases = phases
+
+    if phase_id and phase_id.isdigit():
+        subjects = [s for s in subjects if s.sorted_phases]
 
     return TemplateResponse(request, 'portal/learning_phases_list.html', {
         'subjects': subjects,
+        'all_subjects': all_subjects,
+        'all_phases': all_phases,
+        'selected_subject_id': int(subject_id) if subject_id and subject_id.isdigit() else None,
+        'selected_phase_id': int(phase_id) if phase_id and phase_id.isdigit() else None,
     })
+
+import json
+@admin_required
+def portal_phase_name_api_add(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed.'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        name = data.get('name', '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Phase name cannot be blank.'}, status=400)
+
+        if PhaseName.objects.filter(name__iexact=name).exists():
+            return JsonResponse({'success': False, 'error': f'Phase name "{name}" already exists.'}, status=400)
+
+        phase_name = PhaseName.objects.create(name=name)
+        return JsonResponse({'success': True, 'name': phase_name.name})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 @admin_required
 def portal_learning_phase_add(request):
@@ -1557,4 +1661,89 @@ def portal_learning_phase_delete(request, phase_id):
         return redirect('portal_learning_phases_list')
     return TemplateResponse(request, 'portal/learning_phase_confirm_delete.html', {
         'phase': phase,
+    })
+
+@admin_required
+def portal_phase_assign_topics(request, phase_id):
+    phase = get_object_or_404(LearningPhase, id=phase_id)
+    subject = phase.subject
+
+    if request.method == 'POST':
+        is_confirming = request.POST.get('confirm') == 'true'
+        is_initial = request.POST.get('assignment_form_submitted') == '1'
+
+        if not is_confirming and not is_initial:
+            messages.error(request, "Invalid form submission.")
+            return redirect('portal_phase_assign_topics', phase_id=phase.id)
+
+        submitted_topic_ids = request.POST.getlist('topic_ids')
+        submitted_ids = []
+        for x in submitted_topic_ids:
+            if x.strip().isdigit():
+                submitted_ids.append(int(x))
+
+        valid_ids = list(Topic.objects.filter(subject=subject, id__in=submitted_ids).values_list('id', flat=True))
+        if len(valid_ids) != len(submitted_ids):
+            messages.error(request, "Invalid topics or cross-subject assignment attempted.")
+            return redirect('portal_phase_assign_topics', phase_id=phase.id)
+
+        state_changed = False
+
+        with transaction.atomic():
+            topics = list(Topic.objects.select_for_update(of=('self',)).filter(subject=subject).order_by('order', 'id').select_related('learning_phase'))
+
+            conflicts = []
+            unassignments = []
+
+            for t in topics:
+                was_in_this_phase = t.learning_phase_id == phase.id
+                is_checked = t.id in valid_ids
+
+                if is_checked and not was_in_this_phase and t.learning_phase_id is not None:
+                    conflicts.append(t)
+
+                if not is_checked and was_in_this_phase:
+                    unassignments.append(t)
+
+            if is_confirming:
+                for t in conflicts + unassignments:
+                    expected = request.POST.get(f'expected_phase_{t.id}')
+                    current = str(t.learning_phase_id) if t.learning_phase_id else ""
+                    if expected != current:
+                        state_changed = True
+                        break
+
+            if (conflicts or unassignments) and (not is_confirming or state_changed):
+                pass # exit atomic safely, render template below
+            else:
+                for t in topics:
+                    is_checked = t.id in valid_ids
+                    if is_checked and t.learning_phase_id != phase.id:
+                        t.learning_phase = phase
+                        t.clean()
+                        t.save()
+                    elif not is_checked and t.learning_phase_id == phase.id:
+                        t.learning_phase = None
+                        t.clean()
+                        t.save()
+
+                messages.success(request, f"Topics assigned to {phase.name} successfully.")
+                return redirect('portal_learning_phases_list')
+
+        if state_changed:
+            messages.warning(request, "Topic assignments changed since your last review. Please confirm the updated changes.")
+
+        return TemplateResponse(request, 'portal/phase_assign_topics_confirm.html', {
+            'phase': phase,
+            'subject': subject,
+            'conflicts': conflicts,
+            'unassignments': unassignments,
+            'proposed_topic_ids': valid_ids,
+        })
+
+    topics = Topic.objects.filter(subject=subject).order_by('order', 'id').select_related('learning_phase')
+    return TemplateResponse(request, 'portal/phase_assign_topics.html', {
+        'phase': phase,
+        'subject': subject,
+        'topics': topics,
     })

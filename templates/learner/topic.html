@@ -36,14 +36,9 @@
         </div>
 
         <!-- Video Tutorials -->
-        {% if videos or access_state == 'LOCKED_SEQUENTIAL' %}
+        {% if videos %}
         <div class="mb-4">
           <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-play-btn-fill text-danger me-2"></i> Video Tutorials</h5>
-          {% if access_state == 'LOCKED_SEQUENTIAL' %}
-          <div class="alert alert-light border text-muted">
-            <i class="bi bi-lock-fill me-2"></i>Videos are locked until you complete the previous topic.
-          </div>
-          {% else %}
           <div class="row g-3">
             {% for video in videos %}
             <div class="col-12">
@@ -63,37 +58,38 @@
                     {% endif %}
                   </div>
 
-                  {% if 'youtube.com' in video.url or 'youtu.be' in video.url %}
-                  <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" id="toggle-btn-{{ video.id }}" onclick="toggleYouTubePlayer('{{ video.id }}', '{{ video.url|escapejs }}')" aria-expanded="false" aria-controls="video-container-{{ video.id }}">
-                    <i class="bi bi-play-circle me-1" id="toggle-icon-{{ video.id }}"></i> <span id="toggle-text-{{ video.id }}">Watch Video</span>
-                  </button>
-                  {% else %}
-                  <a href="{{ video.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary text-nowrap">
-                    <i class="bi bi-play-circle me-1"></i> Watch Video
-                  </a>
-                  {% endif %}
+                  <div class="d-flex align-items-center gap-2">
+                    {% if access_state == 'LOCKED_SEQUENTIAL' %}
+                    <span id="locked-msg-vid-{{ video.id }}" class="text-warning small fw-bold d-none"><i class="bi bi-lock-fill"></i> Complete previous topic</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="Complete the previous topic to unlock" onclick="document.getElementById('locked-msg-vid-{{ video.id }}').classList.toggle('d-none')">
+                      <i class="bi bi-lock-fill me-1"></i> Watch Video
+                    </button>
+                    {% elif 'youtube.com' in video.url or 'youtu.be' in video.url %}
+                    <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" id="toggle-btn-{{ video.id }}" onclick="toggleYouTubePlayer('{{ video.id }}', '{{ video.url|escapejs }}')" aria-expanded="false" aria-controls="video-container-{{ video.id }}">
+                      <i class="bi bi-play-circle me-1" id="toggle-icon-{{ video.id }}"></i> <span id="toggle-text-{{ video.id }}">Watch Video</span>
+                    </button>
+                    {% else %}
+                    <a href="{{ video.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary text-nowrap">
+                      <i class="bi bi-play-circle me-1"></i> Watch Video
+                    </a>
+                    {% endif %}
+                  </div>
                 </div>
 
-                {% if 'youtube.com' in video.url or 'youtu.be' in video.url %}
+                {% if access_state != 'LOCKED_SEQUENTIAL' and 'youtube.com' in video.url or access_state != 'LOCKED_SEQUENTIAL' and 'youtu.be' in video.url %}
                 <div id="video-container-{{ video.id }}" class="mt-3 d-none"></div>
                 {% endif %}
               </div>
             </div>
             {% endfor %}
           </div>
-          {% endif %}
         </div>
         {% endif %}
 
         <!-- Dynamic Learning Materials -->
-        {% if resources or access_state == 'LOCKED_SEQUENTIAL' %}
+        {% if resources %}
         <div class="mb-4">
           <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-folder-fill text-primary me-2"></i> Learning Materials</h5>
-          {% if access_state == 'LOCKED_SEQUENTIAL' %}
-          <div class="alert alert-light border text-muted">
-            <i class="bi bi-lock-fill me-2"></i>Learning materials are locked until you complete the previous topic.
-          </div>
-          {% else %}
           <div class="row g-3">
             {% for res in resources %}
             <div class="col-12">
@@ -117,14 +113,22 @@
                     </span>
                   </div>
                 </div>
-                <a href="{{ res.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary text-nowrap">
-                  <i class="bi bi-box-arrow-up-right me-1"></i> Open Material
-                </a>
+                <div class="d-flex align-items-center gap-2">
+                  {% if access_state == 'LOCKED_SEQUENTIAL' %}
+                  <span id="locked-msg-res-{{ res.id }}" class="text-warning small fw-bold d-none"><i class="bi bi-lock-fill"></i> Complete previous topic</span>
+                  <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="Complete the previous topic to unlock" onclick="document.getElementById('locked-msg-res-{{ res.id }}').classList.toggle('d-none')">
+                    <i class="bi bi-lock-fill me-1"></i> Open Material
+                  </button>
+                  {% else %}
+                  <a href="{{ res.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary text-nowrap">
+                    <i class="bi bi-box-arrow-up-right me-1"></i> Open Material
+                  </a>
+                  {% endif %}
+                </div>
               </div>
             </div>
             {% endfor %}
           </div>
-          {% endif %}
         </div>
         {% endif %}
       </div>
@@ -142,10 +146,12 @@
         </p>
 
         {% if access_state == 'LOCKED_SEQUENTIAL' %}
-          <div class="alert alert-warning mb-0 small">
-            <i class="bi bi-lock-fill me-1"></i>
-            Assessment Locked: Complete the previous topic to unlock.
+          <div class="mb-2 text-center text-warning small fw-bold d-none" id="locked-msg-quiz">
+            <i class="bi bi-lock-fill"></i> Complete the previous topic to unlock
           </div>
+          <button type="button" class="btn btn-secondary w-100 py-2 fw-semibold" title="Complete the previous topic to unlock" onclick="document.getElementById('locked-msg-quiz').classList.toggle('d-none')">
+            <i class="bi bi-lock-fill me-1"></i> Take Assessment
+          </button>
         {% elif is_assessment_ready %}
             <a href="{% url 'quiz_modal' subject.slug topic.id %}"
               class="btn btn-primary w-100 py-2 fw-semibold"
@@ -220,7 +226,7 @@
         {% else %}
         <div class="fw-semibold text-muted opacity-75">
           <i class="bi bi-lock-fill"></i> {{ next_topic.name }}
-          <div class="small fw-normal mt-1">Complete this topic to unlock</div>
+          <div class="small fw-normal mt-1">Upcoming</div>
         </div>
         {% endif %}
       </div>

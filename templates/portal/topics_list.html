@@ -107,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <th class="ps-2 ps-md-4">Order</th>
             <th>Topic Name</th>
             <th>Subject</th>
+            <th>Phase</th>
             <th>Status</th>
             <th>Questions</th>
             <th class="text-end pe-2 pe-md-4">
@@ -134,6 +135,15 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
             <td>
               <span class="badge bg-light text-dark border fw-normal">{{ t.subject.name }}</span>
+            </td>
+            <td>
+              {% if t.learning_phase %}
+                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-normal">
+                  {{ t.learning_phase.name }}<br><small>Day {{ t.learning_phase.start_day }}-{{ t.learning_phase.end_day }}</small>
+                </span>
+              {% else %}
+                <span class="text-muted small fst-italic">Not assigned</span>
+              {% endif %}
             </td>
             <td>
               {% if t.status == 'published' %}

@@ -1,15 +1,19 @@
 from django import forms
-from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase
+from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase, PhaseName
 from quizzes.models import Question, Choice
 from accounts.models import User
 
 class LearningPhaseForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = [('', '---------')] + [(n, n) for n in PhaseName.objects.values_list('name', flat=True).order_by('name')]
+        self.fields['name'].widget = forms.Select(choices=choices, attrs={'class': 'form-select', 'id': 'id_name'})
+
     class Meta:
         model = LearningPhase
         fields = ['subject', 'name', 'start_day', 'end_day']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Phase 1, Month 1'}),
             'start_day': forms.NumberInput(attrs={'class': 'form-control'}),
             'end_day': forms.NumberInput(attrs={'class': 'form-control'}),
         }
@@ -214,6 +218,26 @@ class LearnerPasswordResetForm(forms.Form):
             except forms.ValidationError as e:
                 raise forms.ValidationError(e.messages)
         return cleaned
+
+class PhaseNameForm(forms.ModelForm):
+    class Meta:
+        model = PhaseName
+        fields = ['name']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Foundation'})
+        }
+
+    def clean_name(self):
+        name = self.cleaned_data.get('name', '').strip()
+        if not name:
+            raise forms.ValidationError('Phase name cannot be blank.')
+        # Enforce case-insensitive uniqueness
+        qs = PhaseName.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('A phase name with this value already exists.')
+        return name
 
 class SiteConfigForm(forms.ModelForm):
     class Meta:

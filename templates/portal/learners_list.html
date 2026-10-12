@@ -115,6 +115,11 @@
             {{ form.email }}
           </div>
           <div class="mb-3">
+            <label class="form-label fw-semibold" for="{{ form.date_of_joining.id_for_label }}">Date of Joining</label>
+            {{ form.date_of_joining }}
+            {{ form.date_of_joining.errors }}
+          </div>
+          <div class="mb-3">
             <label class="form-label fw-semibold">Initial Password</label>
             <div class="input-group">
               {{ form.password }}
@@ -171,6 +176,11 @@
             <label class="form-label fw-semibold">Email Address</label>
             {{ edit_form.email }}
             {{ edit_form.email.errors }}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" for="{{ edit_form.date_of_joining.id_for_label }}">Date of Joining</label>
+            {{ edit_form.date_of_joining }}
+            {{ edit_form.date_of_joining.errors }}
           </div>
         </div>
         <div class="modal-footer">

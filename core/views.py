@@ -108,8 +108,16 @@ def topic_detail(request, slug, topic_id):
 
     if access_state == TopicAccessState.LOCKED_SEQUENTIAL:
         progress = TopicProgress.objects.filter(user=request.user, topic=topic).first()
-        videos = []
-        resources = []
+        if request.user.is_admin_user:
+            videos = list(topic.videos.all())
+            resources = list(topic.resources.all())
+        else:
+            videos = [v for v in topic.videos.all() if has_video_access(request.user, v)]
+            resources = [r for r in topic.resources.all() if has_resource_access(request.user, r)]
+        for v in videos:
+            v.url = ""
+        for r in resources:
+            r.url = ""
     else:
         # Record view and flip status to in_progress if not_started
         progress = record_topic_view(request.user, topic)
@@ -160,7 +168,10 @@ def topic_detail(request, slug, topic_id):
         'resources': resources,
         'attempts_data': attempts_data,
         'next_topic': next_topic,
-        'next_topic_unlocked': is_topic_unlocked(request.user, next_topic) if next_topic else False,
+        'next_topic_unlocked': (
+            get_topic_access_state(request.user, next_topic)
+            not in (TopicAccessState.DENIED, TopicAccessState.UPCOMING)
+        ) if next_topic else False,
         'effective_passing_score': topic.effective_passing_score,
         'required_question_count': site_config.default_required_question_count,
         'question_count': topic.questions.filter(is_active=True).count(),

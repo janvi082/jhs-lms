@@ -2,43 +2,241 @@
 
 {% block title %}LMS Settings - JHS Admin Portal{% endblock %}
 
+{% block extra_head %}
+{{ block.super }}
+<style>
+  /* LMS Settings page-specific layout rules */
+  @media (min-width: 992px) {
+    /* Connect vertical flex chain down to the cards */
+    main:has(.settings-page-wrapper),
+    main.portal-main-settings {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+    }
+
+    .portal-wrapper:has(.settings-page-wrapper),
+    .portal-wrapper.portal-wrapper-settings {
+      display: flex !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+
+    .portal-content:has(.settings-page-wrapper),
+    .portal-content.portal-content-settings {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      padding-top: 0.75rem !important;
+      padding-bottom: 0.75rem !important;
+    }
+
+    .settings-page-wrapper {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+
+    .settings-page-header {
+      flex-shrink: 0 !important;
+    }
+
+    .settings-cards-row {
+      display: flex !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      margin-bottom: 0 !important;
+    }
+
+    .settings-card-col {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      min-width: 0 !important;
+    }
+
+    .settings-card {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      height: 100% !important;
+    }
+
+    .settings-card-body {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+    }
+
+    .phase-names-list-container {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      overflow-y: auto !important;
+    }
+  }
+
+  @media (max-width: 991.98px) {
+    .settings-page-wrapper {
+      display: block;
+    }
+
+    .settings-cards-row {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .settings-card-col {
+      width: 100%;
+    }
+
+    .phase-names-list-container {
+      max-height: 380px;
+      overflow-y: auto;
+    }
+  }
+
+  /* Sleek scrollbars for inner scrollable containers */
+  .settings-scroll-body::-webkit-scrollbar,
+  .phase-names-list-container::-webkit-scrollbar {
+    width: 6px;
+  }
+  .settings-scroll-body::-webkit-scrollbar-track,
+  .phase-names-list-container::-webkit-scrollbar-track {
+    background: #f8f9fa;
+    border-radius: 4px;
+  }
+  .settings-scroll-body::-webkit-scrollbar-thumb,
+  .phase-names-list-container::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 4px;
+  }
+  .settings-scroll-body::-webkit-scrollbar-thumb:hover,
+  .phase-names-list-container::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+</style>
+{% endblock %}
+
+{% block main_margin %}mb-2 mb-lg-3{% endblock %}
+
 {% block portal_content %}
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
-  <div>
+<div class="settings-page-wrapper d-flex flex-column h-100">
+  <div class="settings-page-header flex-shrink-0 mb-3">
     <h3 class="fw-bold text-dark mb-1">LMS Configuration Settings</h3>
-    <p class="text-muted mb-0">Configure default passing scores and question requirements across all training subjects.</p>
+    <p class="text-muted small mb-0">Configure default passing scores and question requirements across all training subjects.</p>
   </div>
-</div>
 
-<div class="row">
-  <div class="col-12 col-md-8 col-lg-6">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white py-3 border-bottom">
-        <h5 class="fw-bold text-dark mb-0"><i class="bi bi-sliders text-danger me-2"></i> Global System Settings</h5>
+  <div class="row g-3 g-lg-4 settings-cards-row align-items-stretch" style="min-height: 0;">
+    <!-- Left Card: Global System Settings -->
+    <div class="col-12 col-lg-6 settings-card-col mb-3 mb-lg-0" style="min-height: 0;">
+      <div class="card border-0 shadow-sm h-100 d-flex flex-column settings-card" style="min-height: 0;">
+        <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom flex-shrink-0">
+          <h5 class="fw-bold text-dark mb-0"><i class="bi bi-sliders text-danger me-2"></i> Global System Settings</h5>
+        </div>
+        <div class="card-body p-3 p-md-4 d-flex flex-column settings-card-body settings-scroll-body overflow-y-auto" style="min-height: 0; flex: 1 1 auto;">
+          <form action="{% url 'portal_settings' %}" method="post" class="d-flex flex-column h-100 mb-0">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Default Passing Score (%)</label>
+              {{ form.default_passing_score }}
+              <div class="form-text">Default percentage required for a learner to pass a topic assessment (e.g. 75%). Can be overridden per topic.</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Minimum Questions Required to Publish a Topic</label>
+              {{ form.default_required_question_count }}
+              <div class="form-text">Minimum number of questions a topic must contain before an administrator can set its status to <strong>Published</strong> (e.g. 5).</div>
+            </div>
+
+            <div class="mt-auto pt-2 text-end">
+              <button type="submit" class="btn btn-primary px-4">
+                <i class="bi bi-check-lg me-1"></i> Save Settings
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="card-body p-4">
-        <form action="{% url 'portal_settings' %}" method="post">
-          {% csrf_token %}
-          <div class="mb-4">
-            <label class="form-label fw-semibold">Default Passing Score (%)</label>
-            {{ form.default_passing_score }}
-            <div class="form-text">Default percentage required for a learner to pass a topic assessment (e.g. 75%). Can be overridden per topic.</div>
-          </div>
+    </div>
 
-          <div class="mb-4">
-            <label class="form-label fw-semibold">Minimum Questions Required to Publish a Topic</label>
-            {{ form.default_required_question_count }}
-            <div class="form-text">Minimum number of questions a topic must contain before an administrator can set its status to <strong>Published</strong> (e.g. 5).</div>
-          </div>
+    <!-- Right Card: Phase Name Management -->
+    <div class="col-12 col-lg-6 settings-card-col" style="min-height: 0;">
+      <div class="card border-0 shadow-sm h-100 d-flex flex-column settings-card" style="min-height: 0;">
+        <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom d-flex justify-content-between align-items-center flex-shrink-0">
+          <h5 class="fw-bold text-dark mb-0"><i class="bi bi-card-list text-primary me-2"></i> Phase Name Management</h5>
+        </div>
+        <div class="card-body p-3 p-md-4 d-flex flex-column settings-card-body" style="min-height: 0; flex: 1 1 auto;">
+          <p class="text-muted small mb-2 flex-shrink-0">Manage the shared list of phase names available when creating new Learning Phases across all subjects.</p>
 
-          <div class="text-end">
-            <button type="submit" class="btn btn-primary px-4">
-              <i class="bi bi-check-lg me-1"></i> Save Settings
-            </button>
+          <form action="{% url 'portal_settings_phase_add' %}" method="post" class="mb-3 flex-shrink-0">
+            {% csrf_token %}
+            <div class="d-flex gap-2 align-items-center">
+              <input type="text" name="name" class="form-control form-control-sm flex-grow-1" placeholder="e.g. Foundation" required>
+              <button type="submit" class="btn btn-primary btn-sm text-nowrap flex-shrink-0 d-inline-flex align-items-center gap-1">
+                <i class="bi bi-plus-lg"></i> Add
+              </button>
+            </div>
+          </form>
+
+          <div class="phase-names-list-container border-top pt-2" style="min-height: 0; flex: 1 1 auto; overflow-y: auto;">
+            <ul class="list-group list-group-flush pb-2">
+              {% for pn in phase_names %}
+              <li class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                <span class="fw-medium text-dark text-break pe-2">{{ pn.name }}</span>
+                <div class="d-flex gap-2 flex-shrink-0">
+                  <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2" data-bs-toggle="collapse" data-bs-target="#edit-pn-{{ pn.id }}">
+                    <i class="bi bi-pencil"></i> Edit
+                  </button>
+                  <form action="{% url 'portal_settings_phase_delete' pn.id %}" method="post" class="d-inline mb-0" onsubmit="return confirm('Remove Phase Name \'{{ pn.name }}\' from the dictionary? Existing Learning Phases will retain their names.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">
+                      <i class="bi bi-trash"></i> Delete
+                    </button>
+                  </form>
+                </div>
+              </li>
+              <div class="collapse w-100 my-2" id="edit-pn-{{ pn.id }}">
+                <div class="card card-body bg-light border-0 py-2 px-3">
+                  <form action="{% url 'portal_settings_phase_edit' pn.id %}" method="post" class="d-flex flex-wrap flex-sm-nowrap gap-2 align-items-center mb-0">
+                    {% csrf_token %}
+                    <input type="text" name="name" class="form-control form-control-sm flex-grow-1" value="{{ pn.name }}" required>
+                    <button type="submit" class="btn btn-success btn-sm flex-shrink-0">Save</button>
+                    <button type="button" class="btn btn-secondary btn-sm flex-shrink-0" data-bs-toggle="collapse" data-bs-target="#edit-pn-{{ pn.id }}">Cancel</button>
+                  </form>
+                  <div class="form-text small text-muted mt-1">Renaming affects future selections only and does not change existing Learning Phases.</div>
+                </div>
+              </div>
+              {% empty %}
+              <div class="text-muted small py-3">No phase names available.</div>
+              {% endfor %}
+            </ul>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+  (function() {
+    var wrapper = document.querySelector('.settings-page-wrapper');
+    if (wrapper) {
+      var content = wrapper.closest('.portal-content');
+      if (content) content.classList.add('portal-content-settings');
+      var portalWrap = wrapper.closest('.portal-wrapper');
+      if (portalWrap) portalWrap.classList.add('portal-wrapper-settings');
+      var mainTag = wrapper.closest('main.container-fluid');
+      if (mainTag) mainTag.classList.add('portal-main-settings');
+    }
+  })();
+</script>
 {% endblock %}

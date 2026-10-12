@@ -73,7 +73,7 @@
   {% if item.access_state == 'AVAILABLE' or item.access_state == 'COMPLETED' %}
   <a href="{% url 'topic_detail' subject.slug item.topic.id %}" class="list-group-item list-group-item-action p-3 text-decoration-none">
   {% elif item.access_state == 'LOCKED_SEQUENTIAL' %}
-  <div class="list-group-item p-3 text-decoration-none bg-light">
+  <a href="{% url 'topic_detail' subject.slug item.topic.id %}" class="list-group-item list-group-item-action p-3 text-decoration-none bg-light">
   {% else %}
   {# UPCOMING #}
   <div class="list-group-item p-3 text-decoration-none opacity-50 bg-light">
@@ -115,7 +115,7 @@
       </div>
     </div>
 
-  {% if item.access_state == 'AVAILABLE' or item.access_state == 'COMPLETED' %}
+  {% if item.access_state == 'AVAILABLE' or item.access_state == 'COMPLETED' or item.access_state == 'LOCKED_SEQUENTIAL' %}
   </a>
   {% else %}
   </div>

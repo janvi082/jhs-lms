@@ -21,9 +21,11 @@ urlpatterns = [
 
     # Learning Phases
     path('learning-phases/', views.portal_learning_phases_list, name='portal_learning_phases_list'),
+    path('learning-phases/api-add-name/', views.portal_phase_name_api_add, name='portal_phase_name_api_add'),
     path('learning-phases/add/', views.portal_learning_phase_add, name='portal_learning_phase_add'),
     path('learning-phases/<int:phase_id>/edit/', views.portal_learning_phase_edit, name='portal_learning_phase_edit'),
     path('learning-phases/<int:phase_id>/delete/', views.portal_learning_phase_delete, name='portal_learning_phase_delete'),
+    path('learning-phases/<int:phase_id>/assign-topics/', views.portal_phase_assign_topics, name='portal_phase_assign_topics'),
     
     # Inline Videos & Materials
     path('videos/<int:video_id>/edit/', views.portal_video_edit, name='portal_video_edit'),
@@ -65,4 +67,7 @@ urlpatterns = [
     
     # LMS Settings
     path('settings/', views.portal_settings, name='portal_settings'),
+    path('settings/phase-names/add/', views.portal_settings_phase_add, name='portal_settings_phase_add'),
+    path('settings/phase-names/<int:phase_id>/edit/', views.portal_settings_phase_edit, name='portal_settings_phase_edit'),
+    path('settings/phase-names/<int:phase_id>/delete/', views.portal_settings_phase_delete, name='portal_settings_phase_delete'),
 ]

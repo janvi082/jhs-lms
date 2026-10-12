@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
+from django.db.models.functions import Lower
 
 class SiteConfig(models.Model):
     default_passing_score = models.PositiveIntegerField(
@@ -54,6 +55,18 @@ class Subject(models.Model):
     def active_topics_count(self):
         return self.topics.filter(status='published').count()
 
+
+class PhaseName(models.Model):
+    name = models.CharField(max_length=200)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(Lower('name'), name='unique_ci_phase_name')
+        ]
+
+    def __str__(self):
+        return self.name
+
 class LearningPhase(models.Model):
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='learning_phases')
     name = models.CharField(max_length=200)
@@ -68,6 +81,10 @@ class LearningPhase(models.Model):
 
     def __str__(self):
         return f"{self.subject.name} - {self.name} (Day {self.start_day}-{self.end_day})"
+
+    @property
+    def duration(self):
+        return self.end_day - self.start_day + 1
 
     def save(self, *args, **kwargs):
         self.clean()
