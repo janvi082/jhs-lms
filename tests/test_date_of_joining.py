@@ -10,11 +10,11 @@ class DateOfJoiningTests(TestCase):
     def test_date_of_joining_field_exists(self):
         user = User.objects.create(username="doj_user", role=User.ROLE_LEARNER)
         self.assertIsNone(user.date_of_joining)
-        
+
         doj = timezone.now().date() - timedelta(days=5)
         user.date_of_joining = doj
         user.save()
-        
+
         user.refresh_from_db()
         self.assertEqual(user.date_of_joining, doj)
 
@@ -30,14 +30,14 @@ class DateOfJoiningTests(TestCase):
         form = LearnerForm(data=form_data)
         self.assertFalse(form.is_valid())
         self.assertIn('date_of_joining', form.errors)
-        
+
         form_data['date_of_joining'] = '2026-01-01'
         form2 = LearnerForm(data=form_data)
         self.assertTrue(form2.is_valid())
-        
+
     def test_learner_edit_form_requires_doj(self):
         user = User.objects.create(username="editlearner", role=User.ROLE_LEARNER)
-        
+
         form_data = {
             'username': 'editlearner',
             'first_name': 'Edit',
@@ -48,7 +48,7 @@ class DateOfJoiningTests(TestCase):
         form = LearnerEditForm(data=form_data, instance=user)
         self.assertFalse(form.is_valid())
         self.assertIn('date_of_joining', form.errors)
-        
+
         form_data['date_of_joining'] = '2026-02-01'
         form2 = LearnerEditForm(data=form_data, instance=user)
         self.assertTrue(form2.is_valid())
@@ -64,12 +64,12 @@ class DateOfJoiningTests(TestCase):
         user.date_of_joining = None
         user.save()
         self.assertIsNone(user.date_of_joining)
-        
+
         # We can directly test the logic since testing migrations requires special setup
         for learner in User.objects.filter(role='learner', date_of_joining__isnull=True):
             learner.date_of_joining = learner.date_joined.date()
             learner.save(update_fields=['date_of_joining'])
-            
+
         user.refresh_from_db()
         self.assertEqual(user.date_of_joining, user.date_joined.date())
 

@@ -6,7 +6,7 @@ from django.db import migrations
 def populate_phase_names(apps, schema_editor):
     LearningPhase = apps.get_model('content', 'LearningPhase')
     PhaseName = apps.get_model('content', 'PhaseName')
-    
+
     # Get distinct names, preserving casing of the first encountered
     existing_names = LearningPhase.objects.values_list('name', flat=True)
     seen = set()

@@ -12,11 +12,11 @@ def cleanup_phase_names(apps, schema_editor):
         if not stripped_name:
             pn.delete()
             continue
-            
+
         # Target the specific 'foundation' row as requested
         if stripped_name == 'foundation':
             stripped_name = 'Foundation'
-            
+
         lower_name = stripped_name.lower()
         if lower_name in seen:
             pn.delete()

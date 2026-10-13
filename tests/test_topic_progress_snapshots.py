@@ -24,17 +24,17 @@ class TopicProgressSnapshotTests(TestCase):
     def test_live_phased_topic_creation(self):
         # Trigger normal live TopicProgress creation
         record_topic_view(self.learner, self.topic_phased)
-        
+
         tp = TopicProgress.objects.get(user=self.learner, topic=self.topic_phased)
         self.assertEqual(tp.expected_end_day_snapshot, 30)
 
     def test_live_unassigned_topic(self):
         # Complete prerequisite so this topic is unlocked
         complete_non_assessed_topic(self.learner, self.topic_phased)
-        
+
         # Topic.learning_phase = NULL
         record_topic_view(self.learner, self.topic_unphased)
-        
+
         tp = TopicProgress.objects.get(user=self.learner, topic=self.topic_unphased)
         self.assertIsNone(tp.expected_end_day_snapshot)
 
@@ -50,7 +50,7 @@ class TopicProgressSnapshotTests(TestCase):
 
         # Trigger another live path
         reconcile_topic_progress(self.learner, self.topic_phased)
-        
+
         tp.refresh_from_db()
         # Verify it remains 30
         self.assertEqual(tp.expected_end_day_snapshot, 30)
@@ -63,7 +63,7 @@ class TopicProgressSnapshotTests(TestCase):
         p2 = LearningPhase.objects.create(subject=s2, name="P2", start_day=1, end_day=30)
         s3 = Subject.objects.create(name="S3", order=4)
         p3 = LearningPhase.objects.create(subject=s3, name="P3", start_day=1, end_day=30)
-        
+
         # Test record_topic_view
         t1 = Topic.objects.create(subject=s1, name="T1", learning_phase=p1)
         record_topic_view(self.learner, t1)
@@ -92,13 +92,13 @@ class TopicProgressSnapshotTests(TestCase):
             passed=True,
             passing_score_used=75
         )
-        
+
         # Verify it is missing
         self.assertFalse(TopicProgress.objects.filter(user=self.learner, topic=t4).exists())
-        
+
         # Run repair
         call_command('repair_topic_progress', execute=True)
-        
+
         # Verify it was reconstructed
         tp = TopicProgress.objects.get(user=self.learner, topic=t4)
         # Even though the Topic currently has a Phase (end_day=30), it must be NULL

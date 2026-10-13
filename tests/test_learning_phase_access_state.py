@@ -19,14 +19,14 @@ class LearningPhaseAccessStateTests(TestCase):
         self.subject = Subject.objects.create(name="Math", slug="math", is_active=True)
         self.phase1 = LearningPhase.objects.create(subject=self.subject, name="Phase 1", start_day=5, end_day=10)
         self.phase2 = LearningPhase.objects.create(subject=self.subject, name="Phase 2", start_day=15, end_day=20)
-        
+
         self.topic1 = Topic.objects.create(subject=self.subject, name="T1", order=1, is_active=True, learning_phase=self.phase1)
         self.topic2 = Topic.objects.create(subject=self.subject, name="T2", order=2, is_active=True, learning_phase=self.phase2)
         self.topic3 = Topic.objects.create(subject=self.subject, name="T3", order=3, is_active=True, learning_phase=None)
-        
+
         # We need to monkey-patch timezone.localdate for deterministic tests
         self.original_localdate = timezone.localdate
-    
+
     def tearDown(self):
         timezone.localdate = self.original_localdate
 
@@ -137,7 +137,7 @@ class LearningPhaseAccessStateTests(TestCase):
         # T1 has no questions but assessment_required=False (completed directly).
         self.topic1.assessment_required = False
         self.topic1.save()
-        
+
         # If we complete T1, T2 should be unlocked.
         TopicProgress.objects.create(user=self.user, topic=self.topic1, status=TopicProgress.STATUS_COMPLETED)
         self.set_today(2026, 1, 16)
@@ -148,9 +148,9 @@ class LearningPhaseAccessStateTests(TestCase):
         # Learner has a phased Topic but date_of_joining is None
         self.user.date_of_joining = None
         self.user.save()
-        
+
         from progress.services import is_topic_unlocked
-        
+
         # State should be DENIED
         self.assertEqual(get_topic_access_state(self.user, self.topic1), TopicAccessState.DENIED)
         # is_topic_unlocked should return False
