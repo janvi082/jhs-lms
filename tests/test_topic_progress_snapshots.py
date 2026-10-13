@@ -4,13 +4,18 @@ from content.models import Subject, Topic, LearningPhase
 from progress.models import TopicProgress
 from quizzes.models import QuizAttempt, Question, Choice
 from progress.services import record_topic_view, complete_non_assessed_topic, reconcile_topic_progress
+from django.utils import timezone
 from django.core.management import call_command
 
 User = get_user_model()
 
 class TopicProgressSnapshotTests(TestCase):
     def setUp(self):
-        self.learner = User.objects.create(username="learner", role=User.ROLE_LEARNER)
+        self.learner = User.objects.create(
+            username="learner",
+            role=User.ROLE_LEARNER,
+            date_of_joining=timezone.localdate()
+        )
         self.subject = Subject.objects.create(name="Subj 1", order=1)
         self.phase = LearningPhase.objects.create(subject=self.subject, name="Phase 1", start_day=1, end_day=30)
         self.topic_phased = Topic.objects.create(subject=self.subject, name="Phased Topic", learning_phase=self.phase)

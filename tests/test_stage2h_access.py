@@ -52,8 +52,12 @@ class Stage2HAccessTests(TestCase):
         response = self.client.get(reverse('topic_detail', args=[self.subject.slug, self.topic2.id]))
         self.assertEqual(response.status_code, 200)
         
-        self.assertEqual(list(response.context['videos']), [])
-        self.assertEqual(list(response.context['resources']), [])
+        videos = list(response.context['videos'])
+        resources = list(response.context['resources'])
+        self.assertEqual(len(videos), 1)
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(videos[0].url, "")
+        self.assertEqual(resources[0].url, "")
         
         # Ensure progress not implicitly created
         self.assertFalse(TopicProgress.objects.filter(user=self.user, topic=self.topic2).exists())
@@ -62,9 +66,10 @@ class Stage2HAccessTests(TestCase):
         html = response.content.decode('utf-8')
         self.assertNotIn("https://youtube.com/watch?v=123", html)
         self.assertNotIn("https://example.com/file.pdf", html)
-        self.assertIn("Videos are locked until you complete the previous topic.", html)
-        self.assertIn("Learning materials are locked until you complete the previous topic.", html)
-        self.assertIn("Assessment Locked: Complete the previous topic to unlock.", html)
+        self.assertIn("Complete previous topic", html)
+        self.assertIn("Complete the previous topic to unlock", html)
+        self.assertIn('<button type="button" class="btn btn-secondary w-100 py-2 fw-semibold"', html)
+        self.assertIn('<i class="bi bi-lock-fill me-1"></i> Take Assessment', html)
         self.assertNotIn(reverse('quiz_modal', args=[self.subject.slug, self.topic2.id]), html)
 
         quiz_resp = self.client.get(reverse('quiz_modal', args=[self.subject.slug, self.topic2.id]))
