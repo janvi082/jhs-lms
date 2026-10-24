@@ -10,7 +10,9 @@ from access.models import LearnerAccess
 
 class RepairTopicProgressTests(TestCase):
     def setUp(self):
-        self.learner = User.objects.create_user(username='learner1', password='pw', role='learner')
+        from datetime import date
+        self.doj = date(2026, 1, 1)
+        self.learner = User.objects.create_user(username='learner1', password='pw', role='learner', date_of_joining=self.doj)
         self.subject = Subject.objects.create(name='Subj', order=1)
         self.topic = Topic.objects.create(subject=self.subject, name='T1', order=1, assessment_required=True, status=Topic.STATUS_PUBLISHED)
         self.q1 = Question.objects.create(required=False, topic=self.topic, text='Q1', question_type=Question.TYPE_PARAGRAPH)
@@ -169,8 +171,8 @@ class RepairTopicProgressTests(TestCase):
 
         call_command('repair_topic_progress', '--execute')
         tp.refresh_from_db()
-        # Since it's assessment_required but has no QuizAttempts, it MUST be NOT_STARTED
-        self.assertEqual(tp.status, TopicProgress.STATUS_NOT_STARTED)
+        # Under Option 2B (Status-Trust), established completions are trusted and preserved
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
 
     def test_existing_completed_at_is_preserved(self):
         t0 = timezone.now() - timezone.timedelta(days=5)
@@ -189,14 +191,15 @@ class RepairTopicProgressTests(TestCase):
         tp = TopicProgress.objects.create(user=self.learner, topic=self.topic, status=TopicProgress.STATUS_COMPLETED, best_score=0, latest_score=0, completed_at=None)
 
         attempt = QuizAttempt.objects.create(
-            user=self.learner, topic=self.topic, attempt_number=1, 
+            user=self.learner, topic=self.topic, attempt_number=1,
             correct_count=0, total_questions=1, score=0, passed=False, passing_score_used=75
         )
         QuizResponse.objects.create(attempt=attempt, question=self.q1, is_correct=False)
 
         call_command('repair_topic_progress', '--execute')
         tp.refresh_from_db()
-        self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
+        # Under Option 2B (Status-Trust), established completions are trusted and preserved
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
         self.assertIsNone(tp.completed_at)
 
     def test_historical_pass_preserves_completion_and_timestamp(self):
@@ -205,7 +208,7 @@ class RepairTopicProgressTests(TestCase):
         tp = TopicProgress.objects.create(user=self.learner, topic=self.topic, status=TopicProgress.STATUS_COMPLETED, best_score=100, latest_score=100, completed_at=t0)
 
         attempt = QuizAttempt.objects.create(
-            user=self.learner, topic=self.topic, attempt_number=1, 
+            user=self.learner, topic=self.topic, attempt_number=1,
             correct_count=1, total_questions=1, score=100, passed=True, passing_score_used=75
         )
         QuizResponse.objects.create(attempt=attempt, question=self.q1, is_correct=True)
@@ -266,10 +269,10 @@ class RepairTopicProgressTests(TestCase):
         self.assertEqual(tp.attempts_count, 2)
         self.assertIsNotNone(tp.completed_at)
         self.assertEqual(tp.completed_at, t1)
-  
-class NPlusOneOptimizationTests(TestCase):  
-    def setUp(self):  
-        pass 
+
+class NPlusOneOptimizationTests(TestCase):
+    def setUp(self):
+        pass
 
 
 class RepairOptimizationTests(TestCase):
@@ -278,37 +281,40 @@ class RepairOptimizationTests(TestCase):
         from django.contrib.auth import get_user_model
         from content.models import Subject, Topic
         from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
-        
+
+        from datetime import date
         User = get_user_model()
-        cls.learner = User.objects.create_user(username='testlearner2', password='password')
+        cls.learner = User.objects.create_user(username='testlearner2', password='password', date_of_joining=date(2026, 1, 1))
         cls.subject = Subject.objects.create(name='Subject 2')
         cls.topic1 = Topic.objects.create(name='Topic 1', subject=cls.subject, assessment_required=True, order=1)
         cls.topic2 = Topic.objects.create(name='Topic 2', subject=cls.subject, assessment_required=True, order=2)
-        
+
         cls.q1 = Question.objects.create(required=False, topic=cls.topic1, text='Q1')
         cls.c1 = Choice.objects.create(question=cls.q1, text='C1', is_correct=True)
-        
+
         cls.q2 = Question.objects.create(required=False, topic=cls.topic2, text='Q2')
         cls.c2 = Choice.objects.create(question=cls.q2, text='C2', is_correct=True)
-        
+
         for i in range(5):
             attempt = QuizAttempt.objects.create(
-                user=cls.learner, topic=cls.topic1, attempt_number=i+1, 
+                user=cls.learner, topic=cls.topic1, attempt_number=i+1,
                 correct_count=1, total_questions=1, score=100, passed=True, passing_score_used=75
             )
             QuizResponse.objects.create(attempt=attempt, question=cls.q1, is_correct=True)
 
         for i in range(5):
             attempt = QuizAttempt.objects.create(
-                user=cls.learner, topic=cls.topic2, attempt_number=i+1, 
+                user=cls.learner, topic=cls.topic2, attempt_number=i+1,
                 correct_count=1, total_questions=1, score=100, passed=True, passing_score_used=75
             )
             QuizResponse.objects.create(attempt=attempt, question=cls.q2, is_correct=True)
 
     def test_reconcile_topic_progress_query_count(self):
         from progress.services import reconcile_topic_progress
-        # We expect a small fixed number of queries regardless of attempts
-        with self.assertNumQueries(7):
+        # 10 queries executed:
+        # 1 savepoint, 1 get_or_create select, 1 nested savepoint, 1 insert, 1 nested release,
+        # 1 select_for_update, 1 annotated attempts, 1 active question check, 1 update, 1 release
+        with self.assertNumQueries(10):
             reconcile_topic_progress(self.learner, self.topic1)
 
     def test_repair_topic_progress_query_count(self):
@@ -316,10 +322,11 @@ class RepairOptimizationTests(TestCase):
         from progress.services import reconcile_topic_progress
         reconcile_topic_progress(self.learner, self.topic1)
         reconcile_topic_progress(self.learner, self.topic2)
-        
-        # Test command query count (bulk optimization)
-        # 1 for topic scan, 1 for attempt scan, 1 savepoint, 1 bulk user, 1 bulk topic, 1 bulk TP, 1 annotated attempts, 1 rollback = 8
-        with self.assertNumQueries(9):
+
+        # Test command query count (bulk optimization):
+        # 1 TP scan, 1 attempt scan, 1 savepoint, 1 bulk user, 1 bulk topic,
+        # 1 bulk active questions check, 1 bulk TP, 1 annotated attempts, 1 rollback, 1 release = 10
+        with self.assertNumQueries(10):
             call_command('repair_topic_progress')
 
 class RepairBehaviorTests(TestCase):
@@ -328,9 +335,10 @@ class RepairBehaviorTests(TestCase):
         from django.contrib.auth import get_user_model
         from content.models import Subject, Topic
         from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
-        
+
+        from datetime import date
         User = get_user_model()
-        cls.learner = User.objects.create_user(username='testlearner3', password='password')
+        cls.learner = User.objects.create_user(username='testlearner3', password='password', date_of_joining=date(2026, 1, 1))
         cls.subject = Subject.objects.create(name='Subject 3')
         cls.topic = Topic.objects.create(name='Topic 3', subject=cls.subject, assessment_required=True, order=1)
         cls.q = Question.objects.create(required=False, topic=cls.topic, text='Q1')
@@ -340,27 +348,267 @@ class RepairBehaviorTests(TestCase):
         from progress.models import TopicProgress
         from django.core.management import call_command
         from quizzes.models import QuizAttempt, QuizResponse
-        
+
         TopicProgress.objects.filter(user=self.learner, topic=self.topic).delete()
         QuizAttempt.objects.filter(user=self.learner, topic=self.topic).delete()
-        
+
         attempt = QuizAttempt.objects.create(
-            user=self.learner, topic=self.topic, attempt_number=1, 
+            user=self.learner, topic=self.topic, attempt_number=1,
             correct_count=1, total_questions=1, score=100, passed=True, passing_score_used=75
         )
         QuizResponse.objects.create(attempt=attempt, question=self.q, is_correct=True)
-        
+
         call_command('repair_topic_progress')
         self.assertFalse(TopicProgress.objects.filter(user=self.learner, topic=self.topic).exists())
-        
+
         call_command('repair_topic_progress', '--execute')
-        
+
         tp = TopicProgress.objects.get(user=self.learner, topic=self.topic)
         self.assertEqual(tp.attempts_count, 1)
         self.assertEqual(tp.best_score, 100)
         self.assertEqual(tp.latest_score, 100)
         self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
         self.assertIsNotNone(tp.completed_at)
-        
+
         # Second run should be idempotent
         call_command('repair_topic_progress')
+class FrozenDeadlineRepairCommandTests(TestCase):
+    def setUp(self):
+        from datetime import date
+        from content.models import LearningPhase
+        self.doj = date(2026, 1, 1)
+        self.learner = User.objects.create_user(
+            username='deadline_learner',
+            password='pw',
+            role='learner',
+            date_of_joining=self.doj
+        )
+        self.subject = Subject.objects.create(name='Phase Subj', order=1)
+        self.phase = LearningPhase.objects.create(
+            subject=self.subject,
+            name='Phase 1',
+            start_day=1,
+            end_day=10
+        )
+        self.topic = Topic.objects.create(
+            subject=self.subject,
+            learning_phase=self.phase,
+            name='Phase Topic',
+            order=1,
+            assessment_required=True,
+            status=Topic.STATUS_PUBLISHED
+        )
+        self.question = Question.objects.create(
+            required=False,
+            topic=self.topic,
+            text='Q1',
+            question_type=Question.TYPE_PARAGRAPH
+        )
+
+        config = SiteConfig.get_solo()
+        config.default_passing_score = 70
+        config.save()
+
+    def _create_attempt(self, created_at, score, passed):
+        attempt = QuizAttempt.objects.create(
+            user=self.learner,
+            topic=self.topic,
+            attempt_number=1,
+            correct_count=1 if passed else 0,
+            total_questions=1,
+            score=score,
+            passed=passed,
+            passing_score_used=70
+        )
+        QuizAttempt.objects.filter(id=attempt.id).update(created_at=created_at)
+        QuizResponse.objects.create(
+            attempt=attempt,
+            question=self.question,
+            is_correct=passed,
+            text_response='ans'
+        )
+        return attempt
+
+    def test_existing_snapshot_passed_through_and_used_for_first_completion(self):
+        """1. Existing snapshot is passed through and used for first completion."""
+        from datetime import date
+        tp = TopicProgress.objects.create(
+            user=self.learner,
+            topic=self.topic,
+            status=TopicProgress.STATUS_IN_PROGRESS,
+            best_score=0,
+            latest_score=0,
+            attempts_count=0,
+            expected_end_day_snapshot=10
+        )
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        t2 = timezone.now() - timezone.timedelta(days=1)
+        self._create_attempt(t1, 100, True)
+        self._create_attempt(t2, 40, False)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp.refresh_from_db()
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
+        self.assertEqual(tp.best_score, 100)
+        self.assertEqual(tp.latest_score, 40)
+        self.assertEqual(tp.attempts_count, 2)
+        self.assertEqual(tp.completed_at, t1)
+        self.assertEqual(tp.frozen_deadline, date(2026, 1, 10))
+        self.assertEqual(tp.expected_end_day_snapshot, 10)
+
+    def test_existing_frozen_deadline_is_preserved_exactly(self):
+        """2. An existing non-null frozen_deadline is preserved exactly during repair,
+        even if DOJ or phase schedule values differ."""
+        from datetime import date
+        historical_deadline = date(2025, 11, 20)
+        t0 = timezone.now() - timezone.timedelta(days=5)
+        tp = TopicProgress.objects.create(
+            user=self.learner,
+            topic=self.topic,
+            status=TopicProgress.STATUS_COMPLETED,
+            best_score=100,
+            latest_score=100,
+            completed_at=t0,
+            frozen_deadline=historical_deadline
+        )
+        self._create_attempt(t0, 100, True)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp.refresh_from_db()
+        self.assertEqual(tp.frozen_deadline, historical_deadline)
+
+    def test_historical_completed_record_with_null_deadline_remains_null(self):
+        """3. A historical completed record with frozen_deadline=None remains None;
+        repair must not fabricate historical timing."""
+        t0 = timezone.now() - timezone.timedelta(days=5)
+        tp = TopicProgress.objects.create(
+            user=self.learner,
+            topic=self.topic,
+            status=TopicProgress.STATUS_COMPLETED,
+            best_score=100,
+            latest_score=100,
+            completed_at=t0,
+            frozen_deadline=None
+        )
+        self._create_attempt(t0, 100, True)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp.refresh_from_db()
+        self.assertIsNone(tp.frozen_deadline)
+
+    def test_existing_record_without_snapshot_first_completion_leaves_deadline_none(self):
+        """3b. Historical completion without a trustworthy snapshot does not receive a fabricated deadline."""
+        tp = TopicProgress.objects.create(
+            user=self.learner,
+            topic=self.topic,
+            status=TopicProgress.STATUS_IN_PROGRESS,
+            best_score=0,
+            latest_score=0,
+            attempts_count=0,
+            expected_end_day_snapshot=None
+        )
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        self._create_attempt(t1, 100, True)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp.refresh_from_db()
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
+        self.assertEqual(tp.completed_at, t1)
+        self.assertIsNone(tp.frozen_deadline)
+        self.assertIsNone(tp.expected_end_day_snapshot)
+
+    def test_missing_topic_progress_reconstructed_from_passing_attempt_preserves_completion_without_deadline(self):
+        """4. Missing progress record reconstructed from a passing attempt preserves
+        supported completion evidence without fabricating a deadline."""
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        self._create_attempt(t1, 100, True)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp = TopicProgress.objects.get(user=self.learner, topic=self.topic)
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
+        self.assertEqual(tp.completed_at, t1)
+        self.assertIsNone(tp.frozen_deadline)
+        self.assertIsNone(tp.expected_end_day_snapshot)
+
+    def test_genuinely_new_incomplete_record_receives_current_phase_snapshot(self):
+        """5. Genuinely new incomplete record receives the current phase snapshot when eligible."""
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        self._create_attempt(t1, 50, False)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp = TopicProgress.objects.get(user=self.learner, topic=self.topic)
+        self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
+        self.assertIsNone(tp.completed_at)
+        self.assertIsNone(tp.frozen_deadline)
+        self.assertEqual(tp.expected_end_day_snapshot, 10)
+
+    def test_incomplete_record_without_phase_remains_snapshot_free(self):
+        """6. Incomplete record without a phase remains snapshot-free."""
+        self.topic.learning_phase = None
+        self.topic.save()
+
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        self._create_attempt(t1, 50, False)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp = TopicProgress.objects.get(user=self.learner, topic=self.topic)
+        self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
+        self.assertIsNone(tp.completed_at)
+        self.assertIsNone(tp.frozen_deadline)
+        self.assertIsNone(tp.expected_end_day_snapshot)
+
+    def test_missing_doj_blocks_new_completion(self):
+        """7. Missing DOJ blocks new topic completion."""
+        self.learner.date_of_joining = None
+        self.learner.save()
+
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        self._create_attempt(t1, 100, True)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp = TopicProgress.objects.get(user=self.learner, topic=self.topic)
+        self.assertEqual(tp.status, TopicProgress.STATUS_IN_PROGRESS)
+        self.assertIsNone(tp.completed_at)
+        self.assertIsNone(tp.frozen_deadline)
+
+    def test_topic_with_no_active_questions_follows_reconciliation_logic(self):
+        """8. Topics with no active questions follow the same assessment-required logic as the reconciliation service."""
+        self.question.is_active = False
+        self.question.save()
+
+        tp = TopicProgress.objects.create(
+            user=self.learner,
+            topic=self.topic,
+            status=TopicProgress.STATUS_COMPLETED,
+            best_score=0,
+            latest_score=0
+        )
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp.refresh_from_db()
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
+
+    def test_missing_phase_handled_safely(self):
+        """Missing phase is handled safely and does not crash."""
+        self.topic.learning_phase = None
+        self.topic.save()
+
+        t1 = timezone.now() - timezone.timedelta(days=2)
+        self._create_attempt(t1, 100, True)
+
+        call_command('repair_topic_progress', '--execute')
+
+        tp = TopicProgress.objects.get(user=self.learner, topic=self.topic)
+        self.assertEqual(tp.status, TopicProgress.STATUS_COMPLETED)
+        self.assertEqual(tp.completed_at, t1)
+        self.assertIsNone(tp.frozen_deadline)
+        self.assertIsNone(tp.expected_end_day_snapshot)

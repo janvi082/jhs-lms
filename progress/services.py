@@ -1,4 +1,6 @@
+from datetime import timedelta
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Avg, Q
 from content.models import Subject, Topic, SiteConfig
 from quizzes.models import Question, QuizAttempt
@@ -80,23 +82,59 @@ def is_topic_unlocked(user, topic):
     state = get_topic_access_state(user, topic)
     return state in (TopicAccessState.AVAILABLE, TopicAccessState.COMPLETED)
 
+def _mark_topic_completed_locked(progress, topic, user, completion_time=None):
+    """
+    Internal helper to mark a locked TopicProgress instance as COMPLETED.
+    Must be called within an active transaction holding select_for_update on progress.
+    """
+    if topic.assessment_required and topic.active_question_count > 0:
+        return progress
+
+    if completion_time is None:
+        completion_time = timezone.now()
+
+    is_first_completion = (progress.status != TopicProgress.STATUS_COMPLETED)
+
+    if is_first_completion:
+        doj = getattr(user, 'date_of_joining', None)
+        if doj is None:
+            if progress.status == TopicProgress.STATUS_NOT_STARTED:
+                progress.status = TopicProgress.STATUS_IN_PROGRESS
+                progress.save(update_fields=['status'])
+            return progress
+
+        progress.status = TopicProgress.STATUS_COMPLETED
+        # Option A: genuine first completion sets legitimate completion timestamp
+        progress.completed_at = completion_time
+        # Option A: capture nominal deadline, replacing any stale deadline
+        end_day = (
+            progress.expected_end_day_snapshot
+            if (progress.expected_end_day_snapshot is not None and progress.expected_end_day_snapshot >= 1)
+            else (topic.learning_phase.end_day if (topic.learning_phase_id and topic.learning_phase) else None)
+        )
+        progress.frozen_deadline = calculate_nominal_deadline(doj, end_day)
+        progress.save(update_fields=['status', 'completed_at', 'frozen_deadline'])
+
+    return progress
+
 def complete_non_assessed_topic(user, topic):
     from access.services import has_subject_access, has_topic_access
     if not topic.assessment_required or topic.active_question_count == 0:
         if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
             if is_topic_unlocked(user, topic):
-                progress, _ = TopicProgress.objects.get_or_create(
-                    user=user,
-                    topic=topic,
-                    defaults={
-                        'expected_end_day_snapshot': lambda: topic.learning_phase.end_day if topic.learning_phase_id else None
-                    }
-                )
-                if progress.status != TopicProgress.STATUS_COMPLETED:
-                    progress.status = TopicProgress.STATUS_COMPLETED
-                    if progress.completed_at is None:
-                        progress.completed_at = timezone.now()
-                    progress.save(update_fields=['status', 'completed_at'])
+                with transaction.atomic():
+                    expected_end_day = topic.learning_phase.end_day if topic.learning_phase_id else None
+                    progress, _ = TopicProgress.objects.get_or_create(
+                        user=user,
+                        topic=topic,
+                        defaults={
+                            'expected_end_day_snapshot': expected_end_day
+                        }
+                    )
+                    progress = TopicProgress.objects.select_for_update().get(id=progress.id)
+                    _mark_topic_completed_locked(progress, topic, user)
+                    return progress
+    return None
 
 def record_topic_view(user, topic):
     """
@@ -109,24 +147,30 @@ def record_topic_view(user, topic):
     if not is_topic_unlocked(user, topic):
         return TopicProgress.objects.filter(user=user, topic=topic).first()
 
-    progress, created = TopicProgress.objects.get_or_create(
-        user=user,
-        topic=topic,
-        defaults={
-            'status': TopicProgress.STATUS_IN_PROGRESS,
-            'last_accessed': timezone.now(),
-            'expected_end_day_snapshot': lambda: topic.learning_phase.end_day if topic.learning_phase_id else None
-        }
-    )
+    with transaction.atomic():
+        expected_end_day = topic.learning_phase.end_day if topic.learning_phase_id else None
+        progress, created = TopicProgress.objects.get_or_create(
+            user=user,
+            topic=topic,
+            defaults={
+                'status': TopicProgress.STATUS_IN_PROGRESS,
+                'last_accessed': timezone.now(),
+                'expected_end_day_snapshot': expected_end_day
+            }
+        )
+        progress = TopicProgress.objects.select_for_update().get(id=progress.id)
 
-    if not created:
+        update_fields = ['last_accessed']
+        progress.last_accessed = timezone.now()
         if progress.status == TopicProgress.STATUS_NOT_STARTED:
             progress.status = TopicProgress.STATUS_IN_PROGRESS
-        progress.last_accessed = timezone.now()
-        progress.save(update_fields=['status', 'last_accessed'])
+            update_fields.append('status')
+        progress.save(update_fields=update_fields)
 
-    complete_non_assessed_topic(user, topic)
-    progress.refresh_from_db()
+        from access.services import has_subject_access, has_topic_access
+        if not topic.assessment_required or topic.active_question_count == 0:
+            if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
+                _mark_topic_completed_locked(progress, topic, user, completion_time=progress.last_accessed)
 
     return progress
 
@@ -288,7 +332,16 @@ def get_overall_learner_progress(user):
 
     return int(round(sum(subject_progresses) / len(subject_progresses)))
 
-def calculate_reconciled_fields(topic_assessment_required, attempts_data, current_status, current_completed_at):
+def calculate_reconciled_fields(
+    topic_assessment_required,
+    attempts_data,
+    current_status,
+    current_completed_at,
+    current_frozen_deadline=None,
+    date_of_joining=None,
+    phase_end_day=None,
+    expected_end_day_snapshot=None
+):
     from progress.models import TopicProgress
 
     attempts_count = len(attempts_data)
@@ -303,70 +356,113 @@ def calculate_reconciled_fields(topic_assessment_required, attempts_data, curren
 
     status = current_status
     completed_at = current_completed_at
+    frozen_deadline = current_frozen_deadline
 
     if topic_assessment_required:
         has_passed = any(a['passed'] for a in fully_graded)
         if has_passed:
+            is_first_completion = (current_status != TopicProgress.STATUS_COMPLETED)
+            earliest_passed = next(a for a in fully_graded if a['passed'])
+
+            if is_first_completion:
+                if date_of_joining is None:
+                    # Missing DOJ: do not finalize topic completion.
+                    # Retain IN_PROGRESS, do not set completed_at or frozen_deadline.
+                    status = TopicProgress.STATUS_IN_PROGRESS
+                    completed_at = None
+                    frozen_deadline = None
+                else:
+                    status = TopicProgress.STATUS_COMPLETED
+                    completed_at = earliest_passed['created_at']
+                    # Determine authoritative end day: prioritize snapshot if valid (>= 1)
+                    effective_end_day = (
+                        expected_end_day_snapshot
+                        if (expected_end_day_snapshot is not None and expected_end_day_snapshot >= 1)
+                        else phase_end_day
+                    )
+                    frozen_deadline = calculate_nominal_deadline(date_of_joining, effective_end_day)
+            else:
+                # Legacy repair & Immutability:
+                status = TopicProgress.STATUS_COMPLETED
+                if completed_at is None:
+                    completed_at = earliest_passed['created_at']
+                # frozen_deadline is preserved as current_frozen_deadline (never backfilled, never overwritten)
+
+        elif current_status == TopicProgress.STATUS_COMPLETED:
+            # Option 2B (Status-Trust): Routine reconciliation trusts an established completion
             status = TopicProgress.STATUS_COMPLETED
-            if completed_at is None:
-                earliest_passed = next(a for a in fully_graded if a['passed'])
-                completed_at = earliest_passed['created_at']
+            # completed_at and frozen_deadline remain unchanged
+
         elif attempts_count > 0:
             status = TopicProgress.STATUS_IN_PROGRESS
             completed_at = None
+            frozen_deadline = None
         else:
             status = TopicProgress.STATUS_NOT_STARTED
             completed_at = None
+            frozen_deadline = None
 
     return {
         'attempts_count': attempts_count,
         'best_score': best_score,
         'latest_score': latest_score,
         'status': status,
-        'completed_at': completed_at
+        'completed_at': completed_at,
+        'frozen_deadline': frozen_deadline,
     }
 
 def reconcile_topic_progress(user, topic):
     from quizzes.models import QuizAttempt
     from django.db.models import Count, Q
 
-    attempts = QuizAttempt.objects.filter(user=user, topic=topic).annotate(
-        ungraded_count=Count('responses', filter=Q(responses__is_correct__isnull=True))
-    ).order_by('created_at', 'id')
+    with transaction.atomic():
+        expected_end_day = topic.learning_phase.end_day if topic.learning_phase_id else None
+        tp, _ = TopicProgress.objects.get_or_create(
+            user=user,
+            topic=topic,
+            defaults={
+                'expected_end_day_snapshot': expected_end_day
+            }
+        )
+        tp = TopicProgress.objects.select_for_update().get(id=tp.id)
 
-    tp, _ = TopicProgress.objects.get_or_create(
-        user=user,
-        topic=topic,
-        defaults={
-            'expected_end_day_snapshot': lambda: topic.learning_phase.end_day if topic.learning_phase_id else None
-        }
-    )
+        attempts = QuizAttempt.objects.filter(user=user, topic=topic).annotate(
+            ungraded_count=Count('responses', filter=Q(responses__is_correct__isnull=True))
+        ).order_by('created_at', 'id')
 
-    attempts_data = [
-        {
-            'score': a.score,
-            'passed': a.passed,
-            'created_at': a.created_at,
-            'is_fully_graded': a.ungraded_count == 0
-        }
-        for a in attempts
-    ]
+        attempts_data = [
+            {
+                'score': a.score,
+                'passed': a.passed,
+                'created_at': a.created_at,
+                'is_fully_graded': a.ungraded_count == 0
+            }
+            for a in attempts
+        ]
 
-    result = calculate_reconciled_fields(
-        topic_assessment_required=topic.assessment_required and topic.questions.filter(is_active=True).exists(),
-        attempts_data=attempts_data,
-        current_status=tp.status,
-        current_completed_at=tp.completed_at
-    )
+        phase_end_day = topic.learning_phase.end_day if (topic.learning_phase_id and topic.learning_phase) else None
+        doj = getattr(user, 'date_of_joining', None)
 
-    tp.attempts_count = result['attempts_count']
-    tp.best_score = result['best_score']
-    tp.latest_score = result['latest_score']
-    tp.status = result['status']
-    tp.completed_at = result['completed_at']
+        result = calculate_reconciled_fields(
+            topic_assessment_required=topic.assessment_required and topic.questions.filter(is_active=True).exists(),
+            attempts_data=attempts_data,
+            current_status=tp.status,
+            current_completed_at=tp.completed_at,
+            current_frozen_deadline=tp.frozen_deadline,
+            date_of_joining=doj,
+            phase_end_day=phase_end_day,
+            expected_end_day_snapshot=tp.expected_end_day_snapshot
+        )
 
-    tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at'])
-    return tp
+        tp.attempts_count = result['attempts_count']
+        tp.best_score = result['best_score']
+        tp.latest_score = result['latest_score']
+        tp.status = result['status']
+        tp.completed_at = result['completed_at']
+        tp.frozen_deadline = result['frozen_deadline']
+
+        tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at', 'frozen_deadline'])
+        return tp
 
 def submit_quiz_attempt(user, topic, submitted_answers, session_question_ids=None):
     """
@@ -505,33 +601,34 @@ def submit_quiz_attempt(user, topic, submitted_answers, session_question_ids=Non
     passing_score_used = topic.effective_passing_score
     passed = score >= passing_score_used
 
-    previous_attempts_count = QuizAttempt.objects.filter(user=user, topic=topic).count()
-    attempt_number = previous_attempts_count + 1
+    with transaction.atomic():
+        previous_attempts_count = QuizAttempt.objects.filter(user=user, topic=topic).count()
+        attempt_number = previous_attempts_count + 1
 
-    attempt = QuizAttempt.objects.create(
-        user=user,
-        topic=topic,
-        attempt_number=attempt_number,
-        correct_count=correct_count,
-        total_questions=total_questions,
-        score=score,
-        passed=passed,
-        passing_score_used=passing_score_used
-    )
-
-    for q, is_corr, txt, choice_ids in response_objects:
-        resp = QuizResponse.objects.create(
-            attempt=attempt,
-            question=q,
-            is_correct=is_corr,
-            text_response=txt
+        attempt = QuizAttempt.objects.create(
+            user=user,
+            topic=topic,
+            attempt_number=attempt_number,
+            correct_count=correct_count,
+            total_questions=total_questions,
+            score=score,
+            passed=passed,
+            passing_score_used=passing_score_used
         )
-        if choice_ids:
-            valid_choices = [c for c in q.choices.all() if c.id in choice_ids]
-            resp.selected_choices.set(valid_choices)
 
-    tp = reconcile_topic_progress(user, topic)
-    return attempt, tp
+        for q, is_corr, txt, choice_ids in response_objects:
+            resp = QuizResponse.objects.create(
+                attempt=attempt,
+                question=q,
+                is_correct=is_corr,
+                text_response=txt
+            )
+            if choice_ids:
+                valid_choices = [c for c in q.choices.all() if c.id in choice_ids]
+                resp.selected_choices.set(valid_choices)
+
+        tp = reconcile_topic_progress(user, topic)
+        return attempt, tp
 
 def recalculate_attempt_score(attempt):
     """Recalculate correct/wrong counts, score, and pass/fail for an existing attempt.
@@ -553,3 +650,801 @@ def recalculate_attempt_score(attempt):
     tp = reconcile_topic_progress(attempt.user, attempt.topic)
 
 
+# ==============================================================================
+# LEARNING PHASE PERFORMANCE MONITORING HELPERS (STAGE 1 - UNIFIED ENGINE)
+# ==============================================================================
+
+class PhasePerformanceStatus:
+    """Canonical performance status keys for Learning Phase monitoring."""
+    EMPTY = 'empty'
+    UPCOMING = 'upcoming'
+    ON_TRACK = 'on_track'
+    DUE_SOON = 'due_soon'
+    OVERDUE = 'overdue'
+    COMPLETED_ON_TIME = 'completed_on_time'
+    COMPLETED_LATE = 'completed_late'
+    COMPLETED_TIMING_UNAVAILABLE = 'completed_timing_unavailable'
+    INCOMPLETE_TIMING_UNAVAILABLE = 'incomplete_timing_unavailable'
+    NO_PHASE = 'no_phase'
+    NO_DOJ = 'no_doj'
+
+
+def calculate_nominal_deadline(date_of_joining, end_day):
+    """
+    Computes nominal calendar deadline date: DOJ + (end_day - 1 calendar days).
+    Day 1 = date_of_joining.
+    Returns None if date_of_joining is None or end_day is missing / < 1.
+    """
+    if not date_of_joining or not end_day or end_day < 1:
+        return None
+    return date_of_joining + timedelta(days=end_day - 1)
+
+
+def evaluate_timeline_status(
+    start_day,
+    end_day,
+    date_of_joining,
+    is_completed,
+    completion_date=None,
+    as_of_date=None,
+    is_timing_verified=False,
+    timing_unavailable_reason=None,
+    benchmark_deadline=None
+):
+    """
+    Pure calculation helper evaluating timeline status for a phase or topic.
+    ZERO database or ORM queries are executed.
+
+    Parameters:
+        start_day: int >= 1 (LearningPhase start_day).
+        end_day: int >= start_day (LearningPhase end_day).
+        date_of_joining: datetime.date | None (Day 1 anchor).
+        is_completed: bool (whether all required work is completed).
+        completion_date: datetime.date | None (calendar date of completion).
+        as_of_date: datetime.date | None (target evaluation date; defaults to timezone.localdate()).
+        is_timing_verified: bool (True ONLY if reliable evidence verifies historical schedule).
+        timing_unavailable_reason: str | None (optional pre-existing reason for unverified timing).
+        benchmark_deadline: datetime.date | None (optional frozen/authoritative deadline for completed work).
+
+    Returns dict with keys:
+        - status: One of PhasePerformanceStatus.*
+        - status_label: Human-readable display label
+        - nominal_deadline: datetime.date | None (current schedule estimate or benchmark deadline)
+        - is_timing_verified: bool
+        - days_overdue: int | None (positive days past deadline for verified overdue work)
+        - days_late: int | None (fixed positive days past deadline for verified late completion)
+        - days_until_due: int | None (days remaining until nominal deadline)
+        - is_eligible_for_on_time_rate: bool (True ONLY for verified eligible outcomes)
+        - timing_unavailable_reason: str | None
+    """
+    if as_of_date is None:
+        as_of_date = timezone.localdate()
+
+    nominal_deadline = calculate_nominal_deadline(date_of_joining, end_day)
+    target_deadline = benchmark_deadline if (is_completed and benchmark_deadline is not None) else nominal_deadline
+
+    # 1. Missing Date of Joining (when no authoritative benchmark deadline exists)
+    if date_of_joining is None and not (is_completed and benchmark_deadline is not None):
+        status = (
+            PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE
+            if is_completed
+            else PhasePerformanceStatus.NO_DOJ
+        )
+        label = 'Completed · Timing unavailable' if is_completed else 'DOJ Not Set'
+        return {
+            'status': status,
+            'status_label': label,
+            'nominal_deadline': None,
+            'is_timing_verified': False,
+            'days_overdue': None,
+            'days_late': None,
+            'days_until_due': None,
+            'is_eligible_for_on_time_rate': False,
+            'timing_unavailable_reason': 'Learner Date of Joining (DOJ) is not set.',
+        }
+
+    # 2. Completed work
+    if is_completed:
+        # If completion date is missing or timing is not verified, fail conservatively
+        if completion_date is None or not is_timing_verified or target_deadline is None:
+            reason = timing_unavailable_reason or (
+                'Missing completion timestamp.' if completion_date is None
+                else 'Historical schedule evidence is absent or unverified.'
+            )
+            return {
+                'status': PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE,
+                'status_label': 'Completed · Timing unavailable',
+                'nominal_deadline': target_deadline,
+                'is_timing_verified': False,
+                'days_overdue': None,
+                'days_late': None,
+                'days_until_due': None,
+                'is_eligible_for_on_time_rate': False,
+                'timing_unavailable_reason': reason,
+            }
+
+        if completion_date <= target_deadline:
+            return {
+                'status': PhasePerformanceStatus.COMPLETED_ON_TIME,
+                'status_label': 'Completed On Time',
+                'nominal_deadline': target_deadline,
+                'is_timing_verified': True,
+                'days_overdue': None,
+                'days_late': 0,
+                'days_until_due': None,
+                'is_eligible_for_on_time_rate': True,
+                'timing_unavailable_reason': None,
+            }
+        else:
+            delay = (completion_date - target_deadline).days
+            return {
+                'status': PhasePerformanceStatus.COMPLETED_LATE,
+                'status_label': f'Completed Late (+{delay}d)',
+                'nominal_deadline': target_deadline,
+                'is_timing_verified': True,
+                'days_overdue': None,
+                'days_late': delay,
+                'days_until_due': None,
+                'is_eligible_for_on_time_rate': True,
+                'timing_unavailable_reason': None,
+            }
+
+    # 3. Incomplete work
+    learner_day = (as_of_date - date_of_joining).days + 1
+
+    # Upcoming (phase has not yet started)
+    if start_day is not None and learner_day < start_day:
+        days_until_due = (nominal_deadline - as_of_date).days if nominal_deadline else None
+        return {
+            'status': PhasePerformanceStatus.UPCOMING,
+            'status_label': 'Upcoming',
+            'nominal_deadline': nominal_deadline,
+            'is_timing_verified': is_timing_verified,
+            'days_overdue': None,
+            'days_late': None,
+            'days_until_due': days_until_due,
+            'is_eligible_for_on_time_rate': False,
+            'timing_unavailable_reason': None,
+        }
+
+    # Overdue: nominal deadline has passed (today > deadline) and required work remains
+    if nominal_deadline and as_of_date > nominal_deadline:
+        overdue_days = (as_of_date - nominal_deadline).days
+        # An overdue phase may enter the on-time rate denominator ONLY when its deadline is verified
+        if is_timing_verified:
+            return {
+                'status': PhasePerformanceStatus.OVERDUE,
+                'status_label': f'Overdue (+{overdue_days}d)',
+                'nominal_deadline': nominal_deadline,
+                'is_timing_verified': True,
+                'days_overdue': overdue_days,
+                'days_late': None,
+                'days_until_due': 0,
+                'is_eligible_for_on_time_rate': True,
+                'timing_unavailable_reason': None,
+            }
+        else:
+            return {
+                'status': PhasePerformanceStatus.INCOMPLETE_TIMING_UNAVAILABLE,
+                'status_label': 'Incomplete · Timing unavailable',
+                'nominal_deadline': nominal_deadline,
+                'is_timing_verified': False,
+                'days_overdue': overdue_days,
+                'days_late': None,
+                'days_until_due': 0,
+                'is_eligible_for_on_time_rate': False,
+                'timing_unavailable_reason': timing_unavailable_reason or 'Historical deadline cannot be verified.',
+            }
+
+    days_until_due = (nominal_deadline - as_of_date).days if nominal_deadline else None
+
+    # Due Soon: today is the deadline or within the previous two calendar days
+    # (deadline - 2 <= today <= deadline), provided the phase has started.
+    if nominal_deadline and (nominal_deadline - timedelta(days=2)) <= as_of_date <= nominal_deadline:
+        label = 'Due Today' if days_until_due == 0 else f'Due Soon ({days_until_due}d left)'
+        return {
+            'status': PhasePerformanceStatus.DUE_SOON,
+            'status_label': label,
+            'nominal_deadline': nominal_deadline,
+            'is_timing_verified': is_timing_verified,
+            'days_overdue': None,
+            'days_late': None,
+            'days_until_due': days_until_due,
+            'is_eligible_for_on_time_rate': False,  # Deadline has not yet passed; excluded from denominator
+            'timing_unavailable_reason': None,
+        }
+
+    # On Track: phase has started, work remains, not due soon, not overdue
+    return {
+        'status': PhasePerformanceStatus.ON_TRACK,
+        'status_label': 'On Track',
+        'nominal_deadline': nominal_deadline,
+        'is_timing_verified': is_timing_verified,
+        'days_overdue': None,
+        'days_late': None,
+        'days_until_due': days_until_due,
+        'is_eligible_for_on_time_rate': False,  # Deadline has not yet passed; excluded from denominator
+        'timing_unavailable_reason': None,
+    }
+
+
+def calculate_topic_performance(
+    topic,
+    topic_progress,
+    date_of_joining,
+    as_of_date=None,
+    is_timing_verified=False,
+    timing_unavailable_reason=None
+):
+    """
+    Evaluates learning phase performance status for a single topic.
+    ZERO database queries are executed.
+
+    Parameters:
+        topic: Topic instance.
+        topic_progress: TopicProgress instance | None (in-memory).
+        date_of_joining: datetime.date | None.
+        as_of_date: datetime.date | None (defaults to timezone.localdate()).
+        is_timing_verified: bool (caller must establish verification; never assumed True).
+        timing_unavailable_reason: str | None.
+    """
+    if not getattr(topic, 'learning_phase_id', None):
+        is_completed = bool(topic_progress and topic_progress.status == TopicProgress.STATUS_COMPLETED)
+        return {
+            'status': PhasePerformanceStatus.NO_PHASE,
+            'status_label': 'Completed (No Phase)' if is_completed else 'No Phase Assigned',
+            'nominal_deadline': None,
+            'is_timing_verified': False,
+            'completed_at': getattr(topic_progress, 'completed_at', None) if topic_progress else None,
+            'days_overdue': None,
+            'days_late': None,
+            'days_until_due': None,
+            'is_eligible_for_on_time_rate': False,
+            'timing_unavailable_reason': 'Topic is not assigned to a learning phase.',
+        }
+
+    phase = topic.learning_phase
+    is_completed = bool(topic_progress and topic_progress.status == TopicProgress.STATUS_COMPLETED)
+    completed_at = getattr(topic_progress, 'completed_at', None) if topic_progress else None
+
+    completion_date = None
+    if completed_at:
+        completion_date = timezone.localdate(completed_at) if timezone.is_aware(completed_at) else completed_at.date()
+
+    frozen_deadline = getattr(topic_progress, 'frozen_deadline', None) if topic_progress else None
+    if is_completed:
+        if frozen_deadline and completed_at:
+            is_timing_verified = True
+            timing_unavailable_reason = None
+        else:
+            is_timing_verified = False
+            timing_unavailable_reason = 'Topic completion deadline was not recorded.'
+    elif not is_completed:
+        if date_of_joining is not None:
+            is_timing_verified = True
+            timing_unavailable_reason = None
+
+    # For incomplete topics, prioritize saved expected_end_day_snapshot over live phase.end_day
+    effective_end_day = phase.end_day
+    if not is_completed and topic_progress:
+        snapshot_end_day = getattr(topic_progress, 'expected_end_day_snapshot', None)
+        if snapshot_end_day is not None and snapshot_end_day >= 1:
+            effective_end_day = snapshot_end_day
+
+    result = evaluate_timeline_status(
+        start_day=phase.start_day,
+        end_day=effective_end_day,
+        date_of_joining=date_of_joining,
+        is_completed=is_completed,
+        completion_date=completion_date,
+        as_of_date=as_of_date,
+        is_timing_verified=is_timing_verified,
+        timing_unavailable_reason=timing_unavailable_reason,
+        benchmark_deadline=frozen_deadline
+    )
+    result['completed_at'] = completed_at
+    return result
+
+
+def calculate_phase_performance(
+    phase,
+    active_topics,
+    progress_map,
+    date_of_joining,
+    as_of_date=None,
+    is_timing_verified=None,
+    timing_unavailable_reason=None
+):
+    """
+    Evaluates learning phase performance status for a phase across its active published topics.
+    ZERO database queries are executed.
+
+    Parameters:
+        phase: LearningPhase instance.
+        active_topics: Iterable of published, active Topic instances assigned to this phase.
+        progress_map: Dict of {topic_id: TopicProgress} for the learner (required in-memory).
+        date_of_joining: datetime.date | None.
+        as_of_date: datetime.date | None (defaults to timezone.localdate()).
+        is_timing_verified: bool | None (defaults to verifying from frozen_deadline/DOJ).
+        timing_unavailable_reason: str | None.
+    """
+    # Filter strictly for active published topics
+    topics_list = [
+        t for t in active_topics
+        if getattr(t, 'is_active', False) and getattr(t, 'status', None) == Topic.STATUS_PUBLISHED
+    ]
+    total_topics = len(topics_list)
+
+    # Empty phase: zero active published topics. Excluded from completion and rate statistics.
+    if total_topics == 0:
+        return {
+            'status': PhasePerformanceStatus.EMPTY,
+            'status_label': 'Empty Phase',
+            'is_empty': True,
+            'total_topics': 0,
+            'completed_topics': 0,
+            'nominal_deadline': None,
+            'is_timing_verified': False,
+            'completed_at': None,
+            'days_overdue': None,
+            'days_late': None,
+            'days_until_due': None,
+            'is_eligible_for_on_time_rate': False,
+            'timing_unavailable_reason': 'Phase has no active published topics assigned.',
+        }
+
+    # Tally completion strictly from progress_map
+    completed_count = 0
+    completed_entries = []
+    has_missing_timestamp = False
+    has_missing_frozen_deadline = False
+
+    for t in topics_list:
+        prog = progress_map.get(t.id) if progress_map else None
+        if prog and prog.status == TopicProgress.STATUS_COMPLETED:
+            completed_count += 1
+            completed_entries.append((t, prog))
+            if not prog.completed_at:
+                has_missing_timestamp = True
+            if getattr(prog, 'frozen_deadline', None) is None:
+                has_missing_frozen_deadline = True
+
+    is_phase_completed = (completed_count == total_topics)
+
+    phase_completed_at = None
+    completion_date = None
+    benchmark_deadline = None
+
+    if is_phase_completed:
+        if completed_entries and not has_missing_timestamp:
+            def _trigger_key(entry):
+                t, prog = entry
+                return (
+                    prog.completed_at,
+                    getattr(t, 'order', 0) or 0,
+                    getattr(t, 'id', 0) or 0,
+                )
+
+            triggering_topic, triggering_prog = max(completed_entries, key=_trigger_key)
+            phase_completed_at = triggering_prog.completed_at
+            completion_date = (
+                timezone.localdate(phase_completed_at)
+                if timezone.is_aware(phase_completed_at)
+                else phase_completed_at.date()
+            )
+            benchmark_deadline = getattr(triggering_prog, 'frozen_deadline', None)
+
+        if has_missing_timestamp or has_missing_frozen_deadline or (benchmark_deadline is None):
+            is_timing_verified = False
+            if not timing_unavailable_reason:
+                timing_unavailable_reason = 'One or more completed topics lack a recorded deadline or completion timestamp.'
+        else:
+            if is_timing_verified is None:
+                is_timing_verified = True
+                timing_unavailable_reason = None
+    else:
+        if is_timing_verified is None:
+            if date_of_joining is not None:
+                is_timing_verified = True
+                timing_unavailable_reason = None
+            else:
+                is_timing_verified = False
+                timing_unavailable_reason = 'DOJ not set.'
+
+    result = evaluate_timeline_status(
+        start_day=phase.start_day,
+        end_day=phase.end_day,
+        date_of_joining=date_of_joining,
+        is_completed=is_phase_completed,
+        completion_date=completion_date,
+        as_of_date=as_of_date,
+        is_timing_verified=is_timing_verified,
+        timing_unavailable_reason=timing_unavailable_reason,
+        benchmark_deadline=benchmark_deadline
+    )
+    result['is_empty'] = False
+    result['total_topics'] = total_topics
+    result['completed_topics'] = completed_count
+    result['completed_at'] = phase_completed_at
+    return result
+
+
+# ==============================================================================
+# BATCH PROGRESS & LEARNING PHASE PERFORMANCE ENGINE (STAGE 2)
+# ==============================================================================
+
+def get_portal_progress_report_data(as_of_date=None):
+    """
+    Batch-evaluates learner progress, topic-weighted completion, and Learning Phase
+    performance metrics across the complete learner cohort.
+
+    ZERO queries inside per-learner, per-subject, per-topic, or per-phase loops.
+    All data is preloaded in constant batch queries upfront and evaluated in memory.
+
+    Parameters:
+        as_of_date: Optional evaluation date (datetime.date). Defaults to timezone.localdate().
+
+    Returns:
+        dict with keys:
+            - 'summary': High-level cohort KPIs (unique learner counts & phase record totals).
+            - 'learners_data': Evaluated per-learner records for table rendering.
+    """
+    if as_of_date is None:
+        as_of_date = timezone.localdate()
+
+    from django.contrib.contenttypes.models import ContentType
+    from accounts.models import User
+    from access.models import LearnerAccess
+    from access.services import has_subject_access, has_topic_access
+    from content.models import LearningPhase
+
+    # 1. Complete Learner Scope (cohort-wide, independent of future UI filters)
+    learners = list(User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined'))
+    total_learners_count = len(learners)
+
+    empty_summary = {
+        'total_learners_count': 0,
+        'learners_with_phases_count': 0,
+        'learners_no_phases_count': 0,
+        'learners_no_doj_count': 0,
+        'learner_kpis': {
+            'no_doj': 0,
+            'no_phase': 0,
+            'overdue': 0,
+            'due_soon': 0,
+            'on_track': 0,
+            'upcoming': 0,
+            'completed_all': 0,
+            'timing_unavailable': 0,
+        },
+        'phase_kpis': {
+            'total_assigned': 0,
+            'empty_count': 0,
+            'upcoming_count': 0,
+            'on_track_count': 0,
+            'due_soon_count': 0,
+            'overdue_count': 0,
+            'completed_on_time_count': 0,
+            'completed_late_count': 0,
+            'completed_timing_unavailable_count': 0,
+            'incomplete_timing_unavailable_count': 0,
+            'no_doj_count': 0,
+            'verified_denominator': 0,
+            'verified_numerator': 0,
+            'verified_on_time_rate_percent': None,
+            'verified_on_time_rate_display': 'N/A',
+        }
+    }
+
+    if not learners:
+        return {
+            'summary': empty_summary,
+            'learners_data': []
+        }
+
+    learner_ids = [u.id for u in learners]
+
+    # 2. Active Subjects
+    active_subjects = list(Subject.objects.filter(is_active=True).order_by('order', 'id'))
+
+    # 3. Learning Phases for Active Subjects
+    phases = list(
+        LearningPhase.objects.filter(subject__in=active_subjects)
+        .select_related('subject')
+        .order_by('subject_id', 'start_day', 'id')
+    )
+    phases_by_subject = {}
+    for p in phases:
+        phases_by_subject.setdefault(p.subject_id, []).append(p)
+
+    # 4. All Active Topics for Active Subjects (matching get_subject_progress_summary exactly)
+    active_topics = list(
+        Topic.objects.filter(
+            subject__in=active_subjects,
+            is_active=True
+        )
+        .select_related('learning_phase', 'subject')
+        .order_by('subject_id', 'order', 'id')
+    )
+    active_topics_by_subject = {}
+    published_topics_by_subject = {}
+    published_topics_by_phase = {}
+    topic_ids = [t.id for t in active_topics]
+    for t in active_topics:
+        active_topics_by_subject.setdefault(t.subject_id, []).append(t)
+        if t.status == Topic.STATUS_PUBLISHED:
+            published_topics_by_subject.setdefault(t.subject_id, []).append(t)
+            if t.learning_phase_id:
+                published_topics_by_phase.setdefault(t.learning_phase_id, []).append(t)
+
+    # 5. Batch Preload LearnerAccess Explicit Denials
+    denies = LearnerAccess.objects.filter(
+        learner_id__in=learner_ids,
+        is_allowed=False
+    ).values_list('learner_id', 'content_type_id', 'object_id')
+
+    cache_by_learner = {u.id: set() for u in learners}
+    for l_id, ct_id, obj_id in denies:
+        cache_by_learner[l_id].add((ct_id, obj_id))
+
+    for u in learners:
+        u._learner_access_cache = cache_by_learner[u.id]
+
+    # 6. Batch Preload TopicProgress Records
+    progresses = TopicProgress.objects.filter(
+        user_id__in=learner_ids,
+        topic_id__in=topic_ids
+    ).only(
+        'id', 'user_id', 'topic_id', 'status', 'best_score', 'latest_score',
+        'attempts_count', 'completed_at', 'expected_end_day_snapshot'
+    )
+    progress_by_learner_topic = {(p.user_id, p.topic_id): p for p in progresses}
+
+    # 7. Cohort Aggregator Data Structures
+    cohort_learner_kpis = {
+        'no_doj': 0,
+        'no_phase': 0,
+        'overdue': 0,
+        'due_soon': 0,
+        'on_track': 0,
+        'upcoming': 0,
+        'completed_all': 0,
+        'timing_unavailable': 0,
+    }
+
+    cohort_phase_kpis = {
+        'total_assigned': 0,
+        'empty_count': 0,
+        'upcoming_count': 0,
+        'on_track_count': 0,
+        'due_soon_count': 0,
+        'overdue_count': 0,
+        'completed_on_time_count': 0,
+        'completed_late_count': 0,
+        'completed_timing_unavailable_count': 0,
+        'incomplete_timing_unavailable_count': 0,
+        'no_doj_count': 0,
+        'verified_denominator': 0,
+        'verified_numerator': 0,
+        'verified_on_time_rate_percent': None,
+        'verified_on_time_rate_display': 'N/A',
+    }
+
+    learners_with_phases_count = 0
+    learners_no_phases_count = 0
+    learners_no_doj_count = 0
+
+    learners_data = []
+
+    # 8. Pure In-Memory Per-Learner Evaluation Loop (ZERO ORM queries)
+    for learner in learners:
+        if learner.date_of_joining is None:
+            learners_no_doj_count += 1
+
+        # A. Existing Subject-Average Progress (%): Exact replication of get_overall_learner_progress
+        subject_progresses = []
+        for subject in active_subjects:
+            sub_topics = active_topics_by_subject.get(subject.id, [])
+            accessible_sub_topics = [t for t in sub_topics if has_topic_access(learner, t)]
+            if not accessible_sub_topics:
+                subject_progresses.append(0)
+            else:
+                comp_count = sum(
+                    1 for t in accessible_sub_topics
+                    if getattr(progress_by_learner_topic.get((learner.id, t.id)), 'status', None) == TopicProgress.STATUS_COMPLETED
+                )
+                subject_progresses.append(int(round((comp_count / len(accessible_sub_topics)) * 100)))
+
+        if not active_subjects:
+            overall_progress = 0
+        else:
+            overall_progress = int(round(sum(subject_progresses) / len(active_subjects)))
+
+        # B. Separate Topic-Weighted Progress (%)
+        accessible_topics_count = 0
+        completed_topics_count = 0
+        for subject in active_subjects:
+            for t in published_topics_by_subject.get(subject.id, []):
+                if has_topic_access(learner, t):
+                    accessible_topics_count += 1
+                    prog = progress_by_learner_topic.get((learner.id, t.id))
+                    if prog and prog.status == TopicProgress.STATUS_COMPLETED:
+                        completed_topics_count += 1
+
+        if accessible_topics_count == 0:
+            topic_weighted_progress = None
+            topic_weighted_display = "N/A"
+        else:
+            topic_weighted_progress = int(round((completed_topics_count / accessible_topics_count) * 100))
+            topic_weighted_display = f"{topic_weighted_progress}%"
+
+        # C. Learning Phase Evaluations for this Learner
+        learner_progress_map = {
+            t_id: p for (u_id, t_id), p in progress_by_learner_topic.items() if u_id == learner.id
+        }
+
+        learner_phases_detail = []
+        learner_phase_counts = {
+            'completed_on_time': 0,
+            'completed_late': 0,
+            'completed_timing_unavailable': 0,
+            'incomplete_timing_unavailable': 0,
+            'overdue': 0,
+            'due_soon': 0,
+            'on_track': 0,
+            'upcoming': 0,
+            'no_doj': 0,
+            'empty': 0,
+            'total_assigned': 0,
+        }
+
+        for subject in active_subjects:
+            if not has_subject_access(learner, subject):
+                continue
+            for phase in phases_by_subject.get(subject.id, []):
+                phase_topics = [
+                    t for t in published_topics_by_phase.get(phase.id, [])
+                    if has_topic_access(learner, t)
+                ]
+                phase_eval = calculate_phase_performance(
+                    phase=phase,
+                    active_topics=phase_topics,
+                    progress_map=learner_progress_map,
+                    date_of_joining=learner.date_of_joining,
+                    as_of_date=as_of_date,
+                )
+                phase_eval['phase'] = phase
+                phase_eval['subject'] = subject
+                learner_phases_detail.append(phase_eval)
+
+                # Tally phase records into learner breakdown & cohort totals
+                if phase_eval.get('is_empty'):
+                    learner_phase_counts['empty'] += 1
+                    cohort_phase_kpis['empty_count'] += 1
+                else:
+                    learner_phase_counts['total_assigned'] += 1
+                    cohort_phase_kpis['total_assigned'] += 1
+
+                    st = phase_eval['status']
+                    if st == PhasePerformanceStatus.COMPLETED_ON_TIME:
+                        learner_phase_counts['completed_on_time'] += 1
+                        cohort_phase_kpis['completed_on_time_count'] += 1
+                    elif st == PhasePerformanceStatus.COMPLETED_LATE:
+                        learner_phase_counts['completed_late'] += 1
+                        cohort_phase_kpis['completed_late_count'] += 1
+                    elif st == PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE:
+                        learner_phase_counts['completed_timing_unavailable'] += 1
+                        cohort_phase_kpis['completed_timing_unavailable_count'] += 1
+                    elif st == PhasePerformanceStatus.INCOMPLETE_TIMING_UNAVAILABLE:
+                        learner_phase_counts['incomplete_timing_unavailable'] += 1
+                        cohort_phase_kpis['incomplete_timing_unavailable_count'] += 1
+                    elif st == PhasePerformanceStatus.OVERDUE:
+                        learner_phase_counts['overdue'] += 1
+                        cohort_phase_kpis['overdue_count'] += 1
+                    elif st == PhasePerformanceStatus.DUE_SOON:
+                        learner_phase_counts['due_soon'] += 1
+                        cohort_phase_kpis['due_soon_count'] += 1
+                    elif st == PhasePerformanceStatus.ON_TRACK:
+                        learner_phase_counts['on_track'] += 1
+                        cohort_phase_kpis['on_track_count'] += 1
+                    elif st == PhasePerformanceStatus.UPCOMING:
+                        learner_phase_counts['upcoming'] += 1
+                        cohort_phase_kpis['upcoming_count'] += 1
+                    elif st == PhasePerformanceStatus.NO_DOJ:
+                        learner_phase_counts['no_doj'] += 1
+                        cohort_phase_kpis['no_doj_count'] += 1
+
+        # D. Mutually Exclusive Learner Primary Status Precedence
+        non_empty_phases = [p for p in learner_phases_detail if not p.get('is_empty')]
+        if len(non_empty_phases) > 0:
+            learners_with_phases_count += 1
+        else:
+            learners_no_phases_count += 1
+
+        if learner.date_of_joining is None:
+            primary_status = 'no_doj'
+            primary_status_label = 'DOJ Not Set'
+            primary_status_class = 'bg-secondary'
+        elif len(non_empty_phases) == 0:
+            primary_status = 'no_phase'
+            primary_status_label = 'No Phases Assigned'
+            primary_status_class = 'bg-secondary'
+        elif any(p['status'] == PhasePerformanceStatus.OVERDUE for p in non_empty_phases):
+            primary_status = 'overdue'
+            primary_status_label = 'Overdue'
+            primary_status_class = 'bg-danger'
+        elif any(p['status'] == PhasePerformanceStatus.DUE_SOON for p in non_empty_phases):
+            primary_status = 'due_soon'
+            primary_status_label = 'Due Soon'
+            primary_status_class = 'bg-warning text-dark'
+        elif any(p['status'] == PhasePerformanceStatus.ON_TRACK for p in non_empty_phases):
+            primary_status = 'on_track'
+            primary_status_label = 'On Track'
+            primary_status_class = 'bg-info text-dark'
+        elif all(p['status'] in (
+            PhasePerformanceStatus.COMPLETED_ON_TIME,
+            PhasePerformanceStatus.COMPLETED_LATE,
+            PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE
+        ) for p in non_empty_phases):
+            primary_status = 'completed_all'
+            primary_status_label = 'Completed'
+            primary_status_class = 'bg-success'
+        elif all(p['status'] == PhasePerformanceStatus.UPCOMING for p in non_empty_phases):
+            primary_status = 'upcoming'
+            primary_status_label = 'Upcoming'
+            primary_status_class = 'bg-secondary'
+        else:
+            primary_status = 'timing_unavailable'
+            primary_status_label = 'Timing Unavailable'
+            primary_status_class = 'bg-light text-dark border'
+
+        cohort_learner_kpis[primary_status] += 1
+
+        learners_data.append({
+            'learner': learner,
+            'date_of_joining': learner.date_of_joining,
+            'overall_progress': overall_progress,
+            'topic_weighted_progress': topic_weighted_progress,
+            'topic_weighted_display': topic_weighted_display,
+            'accessible_topics_count': accessible_topics_count,
+            'completed_topics_count': completed_topics_count,
+            'primary_status': primary_status,
+            'primary_status_label': primary_status_label,
+            'primary_status_class': primary_status_class,
+            'phase_counts': learner_phase_counts,
+            'phases_detail': learner_phases_detail,
+        })
+
+    # 9. Cohort-Wide Verified On-Time Rate Metric
+    verified_den = (
+        cohort_phase_kpis['completed_on_time_count'] +
+        cohort_phase_kpis['completed_late_count'] +
+        cohort_phase_kpis['overdue_count']
+    )
+    verified_num = cohort_phase_kpis['completed_on_time_count']
+
+    if verified_den > 0:
+        rate_pct = int(round((verified_num / verified_den) * 100))
+        rate_disp = f"{rate_pct}%"
+    else:
+        rate_pct = None
+        rate_disp = "N/A"
+
+    cohort_phase_kpis['verified_denominator'] = verified_den
+    cohort_phase_kpis['verified_numerator'] = verified_num
+    cohort_phase_kpis['verified_on_time_rate_percent'] = rate_pct
+    cohort_phase_kpis['verified_on_time_rate_display'] = rate_disp
+
+    summary = {
+        'total_learners_count': total_learners_count,
+        'learners_with_phases_count': learners_with_phases_count,
+        'learners_no_phases_count': learners_no_phases_count,
+        'learners_no_doj_count': learners_no_doj_count,
+        'learner_kpis': cohort_learner_kpis,
+        'phase_kpis': cohort_phase_kpis,
+    }
+
+    return {
+        'summary': summary,
+        'learners_data': learners_data,
+    }

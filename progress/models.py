@@ -26,6 +26,11 @@ class TopicProgress(models.Model):
         blank=True,
         help_text="Historical Learning Phase benchmark captured when this record was first created."
     )
+    frozen_deadline = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Benchmark nominal deadline frozen when topic completion is first recorded."
+    )
 
     class Meta:
         unique_together = ('user', 'topic')

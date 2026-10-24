@@ -11,11 +11,16 @@ from content.models import Subject, Topic, Video, Resource, SiteConfig, Learning
 from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
 from accounts.models import User
 from progress.models import TopicProgress
+from django.utils import timezone
 from progress.services import (
     get_subject_progress_summary,
     get_overall_learner_progress,
     get_topic_display_status,
     recalculate_attempt_score,
+    calculate_phase_performance,
+    calculate_nominal_deadline,
+    annotate_progress_with_review_status,
+    PhasePerformanceStatus,
 )
 from .decorators import admin_required
 from access.models import LearnerAccess
@@ -1180,27 +1185,40 @@ def admin_attempt_review(request, attempt_id, response_id):
     if request.method != 'POST':
         return redirect('admin_attempt_detail', attempt_id=attempt_id)
     action = request.POST.get('action')
-    response = get_object_or_404(QuizResponse, id=response_id, attempt_id=attempt_id)
-    if response.is_correct is not None:
-        messages.error(request, "This response has already been graded and cannot be modified.")
-        return redirect('admin_attempt_detail', attempt_id=attempt_id)
-    if action == 'approve':
-        response.is_correct = True
-        messages.success(request, "Response approved as correct.")
-    elif action == 'reject':
-        response.is_correct = False
-        messages.success(request, "Response marked as incorrect.")
-    else:
+    if action not in ('approve', 'reject'):
         messages.error(request, "Invalid review action.")
         return redirect('admin_attempt_detail', attempt_id=attempt_id)
-    response.save()
-    # Recalculate attempt totals (score, etc.)
-    attempt = response.attempt
-    recalculate_attempt_score(attempt)
 
-    attempt.refresh_from_db()
+    with transaction.atomic():
+        attempt = get_object_or_404(QuizAttempt.objects.select_for_update(), id=attempt_id)
+        response = get_object_or_404(QuizResponse.objects.select_for_update(), id=response_id, attempt=attempt)
+        if response.is_correct is not None:
+            messages.error(request, "This response has already been graded and cannot be modified.")
+            return redirect('admin_attempt_detail', attempt_id=attempt_id)
+        if action == 'approve':
+            response.is_correct = True
+            msg = "Response approved as correct."
+        else:
+            response.is_correct = False
+            msg = "Response marked as incorrect."
+        response.save()
+        # Recalculate attempt totals (score, etc.)
+        recalculate_attempt_score(attempt)
+        attempt.refresh_from_db()
 
-    return redirect('admin_attempt_detail', attempt_id=attempt_id)
+        tp = TopicProgress.objects.filter(user=attempt.user, topic=attempt.topic).first()
+        topic_is_completed = tp is not None and tp.status == TopicProgress.STATUS_COMPLETED
+
+        if (
+            action == 'approve'
+            and attempt.passed
+            and getattr(attempt.user, 'date_of_joining', None) is None
+            and not topic_is_completed
+        ):
+            messages.warning(request, "Response approved as correct. Topic completion remains blocked until learner Date of Joining (DOJ) is set.")
+        else:
+            messages.success(request, msg)
+        return redirect('admin_attempt_detail', attempt_id=attempt_id)
 
 # --- GLOBAL OVERVIEWS (VIDEOS, MATERIALS, QUIZZES) ---
 
@@ -1343,36 +1361,335 @@ def portal_learner_reset_password(request, learner_id):
 @admin_required
 def portal_learner_progress_detail(request, learner_id):
     learner = get_object_or_404(User, id=learner_id)
-    active_subjects = Subject.objects.filter(is_active=True)
+    active_subjects = list(Subject.objects.filter(is_active=True).order_by('order', 'id'))
+
+    # All published topics across active subjects (preserving admin visibility of published curriculum)
+    all_published_topics = list(
+        Topic.objects.filter(
+            subject__in=active_subjects,
+            status=Topic.STATUS_PUBLISHED
+        )
+        .select_related('learning_phase', 'subject')
+        .order_by('order', 'id')
+    )
+
+    # All learning phases across active subjects
+    all_phases = list(
+        LearningPhase.objects.filter(subject__in=active_subjects)
+        .select_related('subject')
+        .order_by('start_day', 'id')
+    )
+
+    phases_by_subject = {}
+    for p in all_phases:
+        phases_by_subject.setdefault(p.subject_id, []).append(p)
+
+    # TopicProgress records for this learner annotated with review status
+    base_progress_qs = TopicProgress.objects.filter(user=learner, topic__in=all_published_topics)
+    user_progs = {p.topic_id: p for p in annotate_progress_with_review_status(base_progress_qs)}
+
+    phase_badge_map = {
+        PhasePerformanceStatus.ON_TRACK: 'bg-info text-dark',
+        PhasePerformanceStatus.DUE_SOON: 'bg-warning text-dark',
+        PhasePerformanceStatus.OVERDUE: 'bg-danger',
+        PhasePerformanceStatus.COMPLETED_ON_TIME: 'bg-success',
+        PhasePerformanceStatus.COMPLETED_LATE: 'bg-warning text-dark',
+        PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE: 'bg-secondary',
+        PhasePerformanceStatus.INCOMPLETE_TIMING_UNAVAILABLE: 'bg-secondary',
+        PhasePerformanceStatus.UPCOMING: 'bg-secondary',
+        PhasePerformanceStatus.NO_DOJ: 'bg-secondary',
+        PhasePerformanceStatus.EMPTY: 'bg-light text-muted border',
+    }
+
+    as_of_date = timezone.localdate()
+
+    # Partition all curriculum topics by subject and phase (never discard restricted topics)
+    curriculum_phase_topics = {}
+    curriculum_unassigned_topics = {}
+
+    for t in all_published_topics:
+        if t.learning_phase_id:
+            curriculum_phase_topics.setdefault((t.subject_id, t.learning_phase_id), []).append(t)
+        else:
+            curriculum_unassigned_topics.setdefault(t.subject_id, []).append(t)
 
     subjects_breakdown = []
     for subject in active_subjects:
-        topics = subject.topics.filter(status=Topic.STATUS_PUBLISHED)
-        user_progs = {p.topic_id: p for p in TopicProgress.objects.filter(user=learner, topic__in=topics)}
+        subject_allowed = access_services.has_subject_access(learner, subject)
+        phases_for_subject = phases_by_subject.get(subject.id, [])
 
-        topics_info = []
-        for topic in topics:
+        phases_data = []
+        for phase in phases_for_subject:
+            # Full curriculum topics assigned to this phase
+            phase_topics = curriculum_phase_topics.get((subject.id, phase.id), [])
+            curriculum_topics_count = len(phase_topics)
+
+            # Topics accessible to this learner under canonical access rules (published, active, accessible)
+            accessible_phase_topics = [
+                t for t in phase_topics
+                if t.is_active and subject_allowed and access_services.has_topic_access(learner, t)
+            ]
+            learner_required_count = len(accessible_phase_topics)
+
+            is_truly_empty = (curriculum_topics_count == 0)
+            is_all_inactive = (curriculum_topics_count > 0 and all(not t.is_active for t in phase_topics))
+            is_all_restricted = (curriculum_topics_count > 0 and learner_required_count == 0 and not is_all_inactive)
+
+            # Evaluate phase performance based on learner-required (accessible) topics
+            if learner_required_count > 0:
+                phase_eval = calculate_phase_performance(
+                    phase=phase,
+                    active_topics=accessible_phase_topics,
+                    progress_map=user_progs,
+                    date_of_joining=learner.date_of_joining,
+                    as_of_date=as_of_date,
+                )
+                badge_class = phase_badge_map.get(phase_eval['status'], 'bg-secondary')
+                completed_required_count = phase_eval['completed_topics']
+            elif is_all_inactive:
+                # All curriculum topics in this phase are inactive in the catalog
+                phase_eval = {
+                    'status': 'inactive',
+                    'status_label': 'Inactive',
+                    'is_empty': False,
+                    'total_topics': 0,
+                    'completed_topics': 0,
+                    'nominal_deadline': calculate_nominal_deadline(learner.date_of_joining, phase.end_day),
+                    'is_timing_verified': False,
+                }
+                badge_class = 'bg-secondary'
+                completed_required_count = 0
+            elif is_all_restricted:
+                # Curriculum topics exist, but none are accessible to the learner
+                phase_eval = {
+                    'status': 'access_restricted',
+                    'status_label': 'Access Restricted',
+                    'is_empty': False,
+                    'total_topics': 0,
+                    'completed_topics': 0,
+                    'nominal_deadline': calculate_nominal_deadline(learner.date_of_joining, phase.end_day),
+                    'is_timing_verified': False,
+                }
+                badge_class = 'bg-secondary'
+                completed_required_count = 0
+            else:
+                # Truly empty phase (0 curriculum topics assigned)
+                phase_eval = calculate_phase_performance(
+                    phase=phase,
+                    active_topics=[],
+                    progress_map=user_progs,
+                    date_of_joining=learner.date_of_joining,
+                    as_of_date=as_of_date,
+                )
+                badge_class = phase_badge_map.get(phase_eval['status'], 'bg-light text-muted border')
+                completed_required_count = 0
+
+            nominal_deadline = calculate_nominal_deadline(learner.date_of_joining, phase.end_day)
+
+            # Build topic info for all curriculum topics in the phase
+            phase_topics_info = []
+            for topic in phase_topics:
+                prog = user_progs.get(topic.id)
+                disp = get_topic_display_status(prog)
+                is_active = bool(topic.is_active)
+                is_access_allowed = bool(subject_allowed and access_services.has_topic_access(learner, topic))
+                is_required = bool(topic.status == Topic.STATUS_PUBLISHED and is_active and is_access_allowed)
+
+                # Preserve established completion if a later retake is pending review
+                has_pending_retake = False
+                if prog and prog.status == TopicProgress.STATUS_COMPLETED and getattr(prog, 'has_pending_review', False):
+                    has_pending_retake = True
+                    disp = {
+                        'code': 'completed',
+                        'label': 'Completed',
+                        'icon': '✓',
+                        'badge_class': 'bg-success',
+                        'text_class': 'text-success',
+                    }
+
+                phase_topics_info.append({
+                    'topic': topic,
+                    'progress': prog,
+                    'display_status': disp,
+                    'has_pending_retake': has_pending_retake,
+                    'is_active': is_active,
+                    'is_access_allowed': is_access_allowed,
+                    'is_required': is_required,
+                    'is_accessible': is_required,
+                    'has_attempts': bool(prog and prog.attempts_count > 0),
+                    'latest_score': prog.latest_score if (prog and prog.attempts_count > 0) else None,
+                    'best_score': prog.best_score if (prog and prog.attempts_count > 0) else None,
+                    'attempts_count': prog.attempts_count if prog else 0,
+                    'completed_at': prog.completed_at if (prog and prog.completed_at) else None,
+                    'frozen_deadline': getattr(prog, 'frozen_deadline', None),
+                })
+
+            phase_has_pending_review = any(
+                t_info.get('display_status', {}).get('code') == 'pending_review' or t_info.get('has_pending_retake')
+                for t_info in phase_topics_info
+            )
+            is_default_open = bool(
+                phase_eval.get('status') in (PhasePerformanceStatus.OVERDUE, PhasePerformanceStatus.DUE_SOON)
+                or phase_has_pending_review
+            )
+
+            phases_data.append({
+                'phase': phase,
+                'eval': phase_eval,
+                'badge_class': badge_class,
+                'nominal_deadline': nominal_deadline,
+                'topics_info': phase_topics_info,
+                'is_truly_empty': is_truly_empty,
+                'is_all_inactive': is_all_inactive,
+                'is_all_restricted': is_all_restricted,
+                'curriculum_topics_count': curriculum_topics_count,
+                'learner_required_count': learner_required_count,
+                'completed_required_count': completed_required_count,
+                'is_default_open': is_default_open,
+                'has_pending_review': phase_has_pending_review,
+            })
+
+        # Unassigned topics in this subject (curriculum)
+        unassigned_topics = curriculum_unassigned_topics.get(subject.id, [])
+        unassigned_topics_info = []
+        for topic in unassigned_topics:
             prog = user_progs.get(topic.id)
             disp = get_topic_display_status(prog)
-            topics_info.append({
+            is_active = bool(topic.is_active)
+            is_access_allowed = bool(subject_allowed and access_services.has_topic_access(learner, topic))
+            is_required = bool(topic.status == Topic.STATUS_PUBLISHED and is_active and is_access_allowed)
+
+            # Preserve established completion if a later retake is pending review
+            has_pending_retake = False
+            if prog and prog.status == TopicProgress.STATUS_COMPLETED and getattr(prog, 'has_pending_review', False):
+                has_pending_retake = True
+                disp = {
+                    'code': 'completed',
+                    'label': 'Completed',
+                    'icon': '✓',
+                    'badge_class': 'bg-success',
+                    'text_class': 'text-success',
+                }
+
+            unassigned_topics_info.append({
                 'topic': topic,
                 'progress': prog,
                 'display_status': disp,
+                'has_pending_retake': has_pending_retake,
+                'is_active': is_active,
+                'is_access_allowed': is_access_allowed,
+                'is_required': is_required,
+                'is_accessible': is_required,
+                'has_attempts': bool(prog and prog.attempts_count > 0),
+                'latest_score': prog.latest_score if (prog and prog.attempts_count > 0) else None,
+                'best_score': prog.best_score if (prog and prog.attempts_count > 0) else None,
+                'attempts_count': prog.attempts_count if prog else 0,
+                'completed_at': prog.completed_at if (prog and prog.completed_at) else None,
+                'frozen_deadline': getattr(prog, 'frozen_deadline', None),
             })
+
+        # Flat topics_info for backward compatibility
+        flat_topics_info = []
+        for p_item in phases_data:
+            flat_topics_info.extend(p_item['topics_info'])
+        flat_topics_info.extend(unassigned_topics_info)
 
         summary = get_subject_progress_summary(learner, subject)
         subjects_breakdown.append({
             'subject': subject,
             'summary': summary,
-            'topics_info': topics_info,
+            'subject_allowed': subject_allowed,
+            'phases_data': phases_data,
+            'unassigned_topics_info': unassigned_topics_info,
+            'topics_info': flat_topics_info,
         })
 
     overall_progress = get_overall_learner_progress(learner)
 
+    total_completed_topics = 0
+    total_attention_topics = 0
+    total_upcoming_topics = 0
+    total_required_topics = 0
+
+    for s_item in subjects_breakdown:
+        for t_info in s_item.get('topics_info', []):
+            if t_info.get('is_required'):
+                total_required_topics += 1
+                disp_code = t_info.get('display_status', {}).get('code')
+                if disp_code == 'completed':
+                    total_completed_topics += 1
+                    if t_info.get('has_pending_retake'):
+                        total_attention_topics += 1
+                elif disp_code in ('needs_improvement', 'pending_review'):
+                    total_attention_topics += 1
+                elif disp_code == 'not_started':
+                    total_upcoming_topics += 1
+
+    summary_stats = {
+        'total_completed': total_completed_topics,
+        'total_attention': total_attention_topics,
+        'total_upcoming': total_upcoming_topics,
+        'total_required': total_required_topics,
+    }
+
+    # Precomputed status strip and header context
+    learner_day = (as_of_date - learner.date_of_joining).days + 1 if learner.date_of_joining else None
+
+    overdue_phases_count = 0
+    due_soon_phases_count = 0
+    phases_completed_count = 0
+    phases_eligible_total = 0
+    has_unrecorded_timing = False
+    pending_review_topic_ids = set()
+
+    for s_item in subjects_breakdown:
+        for p_item in s_item.get('phases_data', []):
+            p_eval = p_item['eval']
+            # Eligible phase: has accessible required topics for this learner
+            if p_item.get('learner_required_count', 0) > 0:
+                phases_eligible_total += 1
+                status = p_eval.get('status')
+                if status == PhasePerformanceStatus.OVERDUE:
+                    overdue_phases_count += 1
+                elif status == PhasePerformanceStatus.DUE_SOON:
+                    due_soon_phases_count += 1
+
+                if status in (
+                    PhasePerformanceStatus.COMPLETED_ON_TIME,
+                    PhasePerformanceStatus.COMPLETED_LATE,
+                    PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE,
+                ):
+                    phases_completed_count += 1
+                    if status == PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE:
+                        has_unrecorded_timing = True
+
+        for t_info in s_item.get('topics_info', []):
+            topic = t_info.get('topic')
+            prog = t_info.get('progress')
+            disp_code = t_info.get('display_status', {}).get('code')
+            if topic and (
+                disp_code == 'pending_review'
+                or t_info.get('has_pending_retake')
+                or (prog and getattr(prog, 'has_pending_review', False))
+            ):
+                pending_review_topic_ids.add(topic.id)
+
+    status_strip = {
+        'overdue_phases': overdue_phases_count,
+        'due_soon_phases': due_soon_phases_count,
+        'pending_review_topics': len(pending_review_topic_ids),
+        'phases_completed': phases_completed_count,
+        'phases_eligible_total': phases_eligible_total,
+    }
+
     context = {
         'learner': learner,
+        'learner_day': learner_day,
+        'status_strip': status_strip,
+        'has_unrecorded_timing': has_unrecorded_timing,
         'subjects_breakdown': subjects_breakdown,
         'overall_progress': overall_progress,
+        'summary_stats': summary_stats,
     }
     return render(request, 'portal/learner_detail.html', context)
 

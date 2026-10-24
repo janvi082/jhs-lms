@@ -3,72 +3,479 @@
 {% block title %}{{ learner.username }} Progress Report - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2 mt-md-0 mb-2 mb-md-3">
-  <a href="{% url 'portal_progress' %}" class="btn btn-sm btn-outline-secondary text-nowrap" title="Back to Progress">
+<style>
+  @media print {
+    .learner-detail-collapse.collapse {
+      display: block !important;
+      height: auto !important;
+      visibility: visible !important;
+    }
+    .phase-toggle-btn,
+    .subject-collapse-controls,
+    .btn-outline-secondary {
+      display: none !important;
+    }
+  }
+  .phase-toggle-btn {
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background-color 0.15s ease;
+  }
+  .phase-toggle-btn:hover {
+    background-color: #f1f3f5 !important;
+  }
+  .phase-toggle-btn:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
+  }
+  .table thead th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+</style>
+
+<!-- Top Navigation & Breadcrumb -->
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2 mt-md-0 mb-2">
+  <a href="{% url 'portal_progress' %}" class="btn btn-sm btn-outline-secondary py-1 px-2 text-nowrap" title="Back to Progress">
     <i class="bi bi-arrow-left me-1"></i> <span class="d-none d-md-inline">Back to Progress</span>
   </a>
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb mb-0 small">
       <li class="breadcrumb-item"><a href="{% url 'portal_progress' %}">Progress</a></li>
-      <li class="breadcrumb-item active text-truncate" aria-current="page" style="max-width: 150px;">{{ learner.get_full_name|default:learner.username }}</li>
+      <li class="breadcrumb-item active text-truncate" aria-current="page" style="max-width: 200px;">{{ learner.get_full_name|default:learner.username }}</li>
     </ol>
   </nav>
 </div>
 
-<div class="card border-0 shadow-sm mb-3 mb-md-4">
-  <div class="card-body p-3 p-md-4">
-    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 gap-md-3">
-      <div>
-        <h3 class="fw-bold text-dark mb-1 fs-4 fs-md-3">{{ learner.get_full_name|default:learner.username }}</h3>
-        <p class="text-muted mb-0 small">
-          Username: <code>@{{ learner.username }}</code><br class="d-block d-md-none"> <span class="d-none d-md-inline">|</span>
-          Email: {{ learner.email|default:"N/A" }}<br class="d-block d-md-none"> <span class="d-none d-md-inline">|</span>
-          Date of Joining: {{ learner.date_of_joining|date:"M j, Y"|default:"Not set" }}
-        </p>
+<!-- Compact Learner Header -->
+<div class="card border shadow-none bg-white mb-2 py-2 px-3">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+    <div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <h5 class="fw-semibold text-dark mb-0 fs-6" style="font-size: 1.05rem !important;">{{ learner.get_full_name|default:learner.username }}</h5>
+        <span class="badge bg-light text-secondary border font-monospace small">@{{ learner.username }}</span>
+        {% if learner_day %}
+          <span class="badge bg-secondary-subtle text-dark border small fw-medium">Day {{ learner_day }}</span>
+        {% endif %}
       </div>
-      <div class="bg-light p-2 p-md-3 rounded text-center" style="min-width: 120px;">
-        <div class="small text-muted mb-1">Overall Progress</div>
-        <div class="h4 h3-md fw-bold text-primary mb-0">{{ overall_progress }}%</div>
+      <div class="text-secondary d-flex flex-wrap align-items-center gap-2 mt-1" style="font-size: 0.85rem; color: #374151;">
+        <span><i class="bi bi-calendar3 me-1"></i>Joined: {{ learner.date_of_joining|date:"M j, Y"|default:"Not set" }}</span>
+        <span class="text-muted">•</span>
+        <span><i class="bi bi-envelope me-1"></i>{{ learner.email|default:"No email provided" }}</span>
       </div>
+    </div>
+    <div class="text-md-end text-dark" style="font-size: 0.92rem;">
+      <span class="text-secondary" style="color: #4b5563;">Overall progress (average across subjects):</span>
+      <strong class="text-dark fs-6 ms-1 fw-semibold">{{ overall_progress }}%</strong>
     </div>
   </div>
 </div>
 
-<div class="row g-4">
+<!-- Compact Status Strip -->
+<div class="card border shadow-none bg-white mb-2 py-2 px-3">
+  <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 text-dark" style="font-size: 0.95rem;">
+    {% if status_strip %}
+      <span>Overdue <strong class="{% if status_strip.overdue_phases > 0 %}text-danger{% else %}text-dark{% endif %} fw-semibold">{{ status_strip.overdue_phases }}</strong></span>
+      <span class="text-secondary opacity-50 mx-1">|</span>
+      <span>Due soon <strong class="{% if status_strip.due_soon_phases > 0 %}text-warning-emphasis{% else %}text-dark{% endif %} fw-semibold">{{ status_strip.due_soon_phases }}</strong></span>
+      <span class="text-secondary opacity-50 mx-1">|</span>
+      <span>Pending review <strong class="{% if status_strip.pending_review_topics > 0 %}text-warning-emphasis{% else %}text-dark{% endif %} fw-semibold">{{ status_strip.pending_review_topics }}</strong></span>
+      <span class="text-secondary opacity-50 mx-1">|</span>
+      <span>Phases complete <strong class="text-dark fw-semibold">{{ status_strip.phases_completed }} of {{ status_strip.phases_eligible_total }}</strong></span>
+    {% else %}
+      <!-- Pending view-context approval for status_strip counts; displaying existing summary counters -->
+      <span>Completed topics <strong class="text-dark fw-semibold">{{ summary_stats.total_completed|default:0 }}</strong> of {{ summary_stats.total_required|default:0 }}</span>
+      <span class="text-secondary opacity-50 mx-1">|</span>
+      <span>Needing attention <strong class="{% if summary_stats.total_attention > 0 %}text-warning-emphasis{% else %}text-dark{% endif %} fw-semibold">{{ summary_stats.total_attention|default:0 }}</strong></span>
+      <span class="text-secondary opacity-50 mx-1">|</span>
+      <span>Upcoming <strong class="text-dark fw-semibold">{{ summary_stats.total_upcoming|default:0 }}</strong></span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Subjects & Phase Breakdowns -->
+<div class="row g-2">
   {% for item in subjects_breakdown %}
-  <div class="col-12 col-lg-6">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-        <h5 class="fw-bold text-dark mb-0">{{ item.subject.name }}</h5>
-        <span class="badge bg-primary-subtle text-primary border">Progress: {{ item.summary.progress_percent }}%</span>
+  <div class="col-12">
+    <div class="card border shadow-none h-100 bg-white">
+      <div class="card-header bg-white py-2 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <h6 class="fw-bold text-dark mb-0">{{ item.subject.name }}</h6>
+          {% if not item.subject_allowed %}
+            <span class="badge bg-secondary-subtle text-secondary border small"><i class="bi bi-shield-lock me-1"></i>Access Restricted</span>
+          {% endif %}
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          {% if item.phases_data or item.unassigned_topics_info %}
+          <div class="btn-group btn-group-sm subject-collapse-controls me-1" role="group" aria-label="Phase display controls for {{ item.subject.name }}">
+            <button type="button" class="btn btn-outline-secondary py-0 px-2 small d-inline-flex align-items-center gap-1" style="font-size: 0.75rem;" onclick="setSubjectCollapse({{ item.subject.id }}, true)" aria-label="Expand all phases in {{ item.subject.name }}" title="Expand all phases">
+              <i class="bi bi-arrows-expand"></i><span class="d-none d-sm-inline">Expand</span>
+            </button>
+            <button type="button" class="btn btn-outline-secondary py-0 px-2 small d-inline-flex align-items-center gap-1" style="font-size: 0.75rem;" onclick="setSubjectCollapse({{ item.subject.id }}, false)" aria-label="Collapse all phases in {{ item.subject.name }}" title="Collapse all phases">
+              <i class="bi bi-arrows-collapse"></i><span class="d-none d-sm-inline">Collapse</span>
+            </button>
+          </div>
+          {% endif %}
+          <span class="badge bg-light text-dark border">Progress: {{ item.summary.progress_percent }}%</span>
+        </div>
       </div>
-      <div class="card-body p-2 p-md-3">
-        <div class="list-group list-group-flush">
-          {% for t in item.topics_info %}
-          <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-1 border-bottom-0">
-            <div class="d-flex align-items-center gap-2">
-              <span class="{{ t.display_status.text_class }} fw-bold fs-5" style="width: 24px; text-align: center;">
-                {{ t.display_status.icon }}
+      <div class="card-body p-2 p-md-2">
+        {% if not item.subject_allowed %}
+          <div class="alert alert-warning mb-2 py-2 px-3 small">
+            <i class="bi bi-shield-lock me-1"></i> Access to this subject is restricted for this learner. Phase topics are displayed below for administrative monitoring.
+          </div>
+        {% endif %}
+
+        {% if not item.phases_data and not item.unassigned_topics_info %}
+          <div class="text-center py-3 text-muted small">No published topics found in this subject.</div>
+        {% endif %}
+
+        {% for p_data in item.phases_data %}
+        <div class="card border mb-2 shadow-none {% if p_data.eval.status == 'overdue' %}border-start border-3 border-danger{% elif p_data.eval.status == 'due_soon' %}border-start border-3 border-warning{% endif %}">
+          <!-- Clickable Phase Header Row -->
+          <button type="button"
+                  class="btn p-2 px-3 w-100 text-start bg-light border-0 d-flex flex-wrap align-items-center justify-content-between gap-2 phase-toggle-btn"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#phase-collapse-{{ item.subject.id }}-{{ p_data.phase.id }}"
+                  aria-expanded="{% if p_data.is_default_open or p_data.eval.status == 'overdue' or p_data.eval.status == 'due_soon' or p_data.has_pending_review %}true{% else %}false{% endif %}"
+                  aria-controls="phase-collapse-{{ item.subject.id }}-{{ p_data.phase.id }}"
+                  style="border-radius: inherit;">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+              <i class="bi {% if p_data.is_default_open or p_data.eval.status == 'overdue' or p_data.eval.status == 'due_soon' or p_data.has_pending_review %}bi-chevron-down{% else %}bi-chevron-right{% endif %} phase-chevron text-secondary me-1"></i>
+              <span class="fw-semibold text-dark fs-6">{{ p_data.phase.name }}</span>
+              <span class="badge bg-white text-secondary border small">
+                Day {{ p_data.phase.start_day }}–{{ p_data.phase.end_day }} ({{ p_data.phase.duration }}d)
               </span>
-              <a href="{% url 'admin_learner_topic_attempts' learner_id=learner.id topic_id=t.topic.id %}" class="text-dark small fw-medium">{{ t.topic.name }}</a>
             </div>
-            <div>
-              {% if t.progress and t.progress.attempts_count > 0 %}
-                <span class="badge bg-light text-dark border font-monospace">
-                  {{ t.progress.best_score }}%
-                </span>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <span class="small text-muted">
+                Due:
+                {% if p_data.nominal_deadline %}
+                  <strong class="text-dark">{{ p_data.nominal_deadline|date:"M j, Y" }}</strong>
+                {% else %}
+                  <span class="text-muted">DOJ not set</span>
+                {% endif %}
+              </span>
+              {% if p_data.eval.status == 'completed_timing_unavailable' or p_data.eval.status == 'completed_on_time' %}
+                <span class="badge bg-success-subtle text-success border">Completed</span>
+              {% elif p_data.eval.status == 'completed_late' %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border">{{ p_data.eval.status_label }}</span>
+              {% elif p_data.eval.status == 'overdue' %}
+                {% if p_data.eval.days_overdue %}
+                  <span class="badge bg-danger-subtle text-danger border">Overdue (+{{ p_data.eval.days_overdue }}d)</span>
+                {% else %}
+                  <span class="badge bg-danger-subtle text-danger border">Overdue</span>
+                {% endif %}
+              {% elif p_data.eval.status == 'due_soon' %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border">Due Soon</span>
               {% else %}
-                <span class="badge bg-light text-muted border font-monospace">
-                  Not Attempted
+                <span class="badge {{ p_data.badge_class }}">{{ p_data.eval.status_label }}</span>
+              {% endif %}
+              {% if p_data.is_truly_empty %}
+                <span class="badge bg-white text-muted border">0 Topics</span>
+              {% elif p_data.is_all_inactive %}
+                <span class="badge bg-white text-muted border">0 / 0 Completed</span>
+              {% elif p_data.is_all_restricted %}
+                <span class="badge bg-white text-muted border">0 / 0 Completed</span>
+              {% else %}
+                <span class="badge bg-white text-dark border">
+                  {{ p_data.completed_required_count }} / {{ p_data.learner_required_count }} Completed
                 </span>
               {% endif %}
             </div>
+          </button>
+
+          <!-- Collapsible Phase Body with Fixed-Width Table -->
+          <div id="phase-collapse-{{ item.subject.id }}-{{ p_data.phase.id }}"
+               class="collapse {% if p_data.is_default_open or p_data.eval.status == 'overdue' or p_data.eval.status == 'due_soon' or p_data.has_pending_review %}show{% endif %} learner-detail-collapse phase-collapse-sub-{{ item.subject.id }} d-print-block">
+            <div class="card-body p-0 border-top">
+            {% if p_data.is_truly_empty %}
+              <div class="p-3 text-muted text-center small fst-italic">No published topics assigned.</div>
+            {% else %}
+              {% if p_data.is_all_inactive %}
+                <div class="p-2 px-3 bg-light-subtle text-muted small border-bottom">
+                  <i class="bi bi-pause-circle me-1"></i> All {{ p_data.curriculum_topics_count }} topic{{ p_data.curriculum_topics_count|pluralize }} in this phase are inactive in the portal catalog and excluded from required work.
+                </div>
+              {% elif p_data.is_all_restricted %}
+                <div class="p-2 px-3 bg-light-subtle text-muted small border-bottom">
+                  <i class="bi bi-shield-lock me-1"></i> All {{ p_data.curriculum_topics_count }} topic{{ p_data.curriculum_topics_count|pluralize }} in this phase are restricted for this learner and excluded from required work.
+                </div>
+              {% endif %}
+
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="table-layout: fixed; width: 100%;">
+                  <colgroup>
+                    <col style="width: 44%;">
+                    <col style="width: 18%;">
+                    <col style="width: 14%;">
+                    <col style="width: 12%;">
+                    <col style="width: 12%;">
+                  </colgroup>
+                  <thead class="table-light text-secondary border-bottom">
+                    <tr>
+                      <th class="ps-3">Topic</th>
+                      <th>Status</th>
+                      <th>Completed</th>
+                      <th class="text-end">Best score</th>
+                      <th class="text-end pe-3">Attempts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for t in p_data.topics_info %}
+                    <tr>
+                      <td class="ps-3 text-truncate">
+                        <div class="d-flex align-items-center gap-2">
+                          <span class="{% if t.display_status.code == 'pending_review' %}text-warning-emphasis{% else %}{{ t.display_status.text_class }}{% endif %} fw-bold" style="width: 20px; text-align: center;" title="{{ t.display_status.label }}">
+                            {{ t.display_status.icon }}
+                          </span>
+                          <div class="text-truncate">
+                            <a href="{% url 'admin_learner_topic_attempts' learner_id=learner.id topic_id=t.topic.id %}" class="text-dark fw-medium text-decoration-none">
+                              {{ t.topic.name }}
+                            </a>
+                            {% if not t.is_active %}
+                              <span class="badge bg-secondary-subtle text-secondary border ms-1 small" title="Inactive in portal catalog; excluded from required work">
+                                <i class="bi bi-pause-circle me-1"></i>Inactive
+                              </span>
+                            {% elif not t.is_access_allowed %}
+                              <span class="badge bg-secondary-subtle text-secondary border ms-1 small" title="Restricted for this learner; excluded from required work">
+                                <i class="bi bi-shield-lock me-1"></i>Restricted
+                              </span>
+                            {% endif %}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {% if t.has_pending_retake %}
+                          <span class="badge bg-success-subtle text-success border small"><i class="bi bi-check-lg me-1"></i>Completed</span>
+                          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small ms-1" title="A newer retake attempt is awaiting review; earlier completion is preserved">
+                            <i class="bi bi-hourglass-split me-1"></i>Retake (Pending review)
+                          </span>
+                        {% elif t.display_status.code == 'pending_review' %}
+                          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small" title="Attempt is pending manual review">
+                            <i class="bi bi-hourglass-split me-1"></i>Pending review
+                          </span>
+                        {% elif t.display_status.code == 'completed' %}
+                          <span class="badge bg-success-subtle text-success border small"><i class="bi bi-check-lg me-1"></i>Completed</span>
+                        {% elif t.display_status.code == 'needs_improvement' %}
+                          <span class="badge bg-warning-subtle text-warning-emphasis border small">Needs Improvement</span>
+                        {% elif t.display_status.code == 'in_progress' %}
+                          <span class="badge bg-info-subtle text-info border small">In Progress</span>
+                        {% else %}
+                          <span class="badge bg-light text-muted border small">Not Started</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if t.completed_at %}
+                          <span class="small text-nowrap text-secondary">{{ t.completed_at|date:"M j, Y" }}</span>
+                        {% else %}
+                          <span class="text-muted small">—</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-end">
+                        {% if t.has_attempts %}
+                          <span class="fw-medium text-dark">{{ t.best_score }}%</span>
+                          {% if t.latest_score is not None and t.latest_score != t.best_score %}
+                            <span class="text-muted small d-block" style="font-size: 0.72rem;">(latest {{ t.latest_score }}%)</span>
+                          {% endif %}
+                        {% else %}
+                          <span class="text-muted small">—</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-end pe-3">
+                        <a href="{% url 'admin_learner_topic_attempts' learner_id=learner.id topic_id=t.topic.id %}"
+                           class="text-decoration-none small text-nowrap"
+                           aria-label="View quiz attempt history for {{ t.topic.name }}"
+                           title="View quiz attempt history">
+                          {{ t.attempts_count }} attempt{{ t.attempts_count|pluralize }} &gt;
+                        </a>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
           </div>
-          {% endfor %}
         </div>
       </div>
+      {% endfor %}
+
+      {% if item.unassigned_topics_info %}
+      <div class="card border mb-0 shadow-none">
+        <button type="button"
+                class="btn p-2 px-3 w-100 text-start bg-light border-0 d-flex flex-wrap align-items-center justify-content-between gap-2 phase-toggle-btn"
+                data-bs-toggle="collapse"
+                data-bs-target="#unassigned-collapse-{{ item.subject.id }}"
+                aria-expanded="false"
+                aria-controls="unassigned-collapse-{{ item.subject.id }}"
+                style="border-radius: inherit;">
+          <div class="d-flex align-items-center flex-wrap gap-2">
+            <i class="bi bi-chevron-right phase-chevron text-secondary me-1"></i>
+            <span class="fw-semibold text-dark fs-6">General / Unassigned Topics</span>
+            <span class="badge bg-secondary-subtle text-secondary border small">No Phase Assigned</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-white text-dark border">
+              {{ item.unassigned_topics_info|length }} Topic{{ item.unassigned_topics_info|length|pluralize }}
+            </span>
+          </div>
+        </button>
+        <div id="unassigned-collapse-{{ item.subject.id }}" class="collapse learner-detail-collapse phase-collapse-sub-{{ item.subject.id }} d-print-block">
+          <div class="card-body p-0 border-top">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0" style="table-layout: fixed; width: 100%;">
+                <colgroup>
+                  <col style="width: 44%;">
+                  <col style="width: 18%;">
+                  <col style="width: 14%;">
+                  <col style="width: 12%;">
+                  <col style="width: 12%;">
+                </colgroup>
+                <thead class="table-light text-secondary border-bottom">
+                  <tr>
+                    <th class="ps-3">Topic</th>
+                    <th>Status</th>
+                    <th>Completed</th>
+                    <th class="text-end">Best score</th>
+                    <th class="text-end pe-3">Attempts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for t in item.unassigned_topics_info %}
+                  <tr>
+                    <td class="ps-3 text-truncate">
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="{% if t.display_status.code == 'pending_review' %}text-warning-emphasis{% else %}{{ t.display_status.text_class }}{% endif %} fw-bold" style="width: 20px; text-align: center;" title="{{ t.display_status.label }}">
+                          {{ t.display_status.icon }}
+                        </span>
+                        <div class="text-truncate">
+                          <a href="{% url 'admin_learner_topic_attempts' learner_id=learner.id topic_id=t.topic.id %}" class="text-dark fw-medium text-decoration-none">
+                            {{ t.topic.name }}
+                          </a>
+                          {% if not t.is_active %}
+                            <span class="badge bg-secondary-subtle text-secondary border ms-1 small" title="Inactive in portal catalog; excluded from required work">
+                              <i class="bi bi-pause-circle me-1"></i>Inactive
+                            </span>
+                          {% elif not t.is_access_allowed %}
+                            <span class="badge bg-secondary-subtle text-secondary border ms-1 small" title="Restricted for this learner; excluded from required work">
+                              <i class="bi bi-shield-lock me-1"></i>Restricted
+                            </span>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {% if t.has_pending_retake %}
+                        <span class="badge bg-success-subtle text-success border small"><i class="bi bi-check-lg me-1"></i>Completed</span>
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small ms-1" title="A newer retake attempt is awaiting review; earlier completion is preserved">
+                          <i class="bi bi-hourglass-split me-1"></i>Retake (Pending review)
+                        </span>
+                      {% elif t.display_status.code == 'pending_review' %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small" title="Attempt is pending manual review">
+                          <i class="bi bi-hourglass-split me-1"></i>Pending review
+                        </span>
+                      {% elif t.display_status.code == 'completed' %}
+                        <span class="badge bg-success-subtle text-success border small"><i class="bi bi-check-lg me-1"></i>Completed</span>
+                      {% elif t.display_status.code == 'needs_improvement' %}
+                        <span class="badge bg-warning-subtle text-warning-emphasis border small">Needs Improvement</span>
+                      {% elif t.display_status.code == 'in_progress' %}
+                        <span class="badge bg-info-subtle text-info border small">In Progress</span>
+                      {% else %}
+                        <span class="badge bg-light text-muted border small">Not Started</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if t.completed_at %}
+                        <span class="small text-nowrap text-secondary">{{ t.completed_at|date:"M j, Y" }}</span>
+                      {% else %}
+                        <span class="text-muted small">—</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      {% if t.has_attempts %}
+                        <span class="fw-medium text-dark">{{ t.best_score }}%</span>
+                        {% if t.latest_score is not None and t.latest_score != t.best_score %}
+                          <span class="text-muted small d-block" style="font-size: 0.72rem;">(latest {{ t.latest_score }}%)</span>
+                        {% endif %}
+                      {% else %}
+                        <span class="text-muted small">—</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end pe-3">
+                      <a href="{% url 'admin_learner_topic_attempts' learner_id=learner.id topic_id=t.topic.id %}"
+                         class="text-decoration-none small text-nowrap"
+                         aria-label="View quiz attempt history for {{ t.topic.name }}"
+                         title="View quiz attempt history">
+                        {{ t.attempts_count }} attempt{{ t.attempts_count|pluralize }} &gt;
+                      </a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </div>
   </div>
-  {% endfor %}
 </div>
+{% endfor %}
+</div>
+
+<!-- Page-Level Footnote for Unrecorded Timing -->
+{% if has_unrecorded_timing %}
+<div class="mt-2 text-secondary small px-1" style="font-size: 0.8rem;">
+  <i class="bi bi-info-circle me-1"></i> Timing isn't recorded for work completed before deadline tracking began.
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+  function setSubjectCollapse(subjectId, expand) {
+    var elements = document.querySelectorAll('.phase-collapse-sub-' + subjectId);
+    elements.forEach(function(el) {
+      var instance = bootstrap.Collapse.getOrCreateInstance(el, { toggle: false });
+      if (expand) {
+        instance.show();
+      } else {
+        instance.hide();
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('show.bs.collapse', function(e) {
+      if (!e.target.classList.contains('learner-detail-collapse')) return;
+      var btn = document.querySelector('[data-bs-target="#' + e.target.id + '"]');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'true');
+        var icon = btn.querySelector('.phase-chevron');
+        if (icon) {
+          icon.classList.remove('bi-chevron-right');
+          icon.classList.add('bi-chevron-down');
+        }
+      }
+    });
+
+    document.addEventListener('hide.bs.collapse', function(e) {
+      if (!e.target.classList.contains('learner-detail-collapse')) return;
+      var btn = document.querySelector('[data-bs-target="#' + e.target.id + '"]');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        var icon = btn.querySelector('.phase-chevron');
+        if (icon) {
+          icon.classList.remove('bi-chevron-down');
+          icon.classList.add('bi-chevron-right');
+        }
+      }
+    });
+  });
+</script>
 {% endblock %}
