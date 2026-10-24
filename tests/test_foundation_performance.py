@@ -1303,6 +1303,71 @@ class FoundationPerformanceMonitoringTests(TestCase):
         tp.refresh_from_db()
         self.assertIsNone(tp.expected_end_day_snapshot)
 
+    def test_assessed_topic_first_completion_on_null_snapshot_saves_snapshot_and_deadline(self):
+        """When an existing TopicProgress record has expected_end_day_snapshot=None,
+        genuine first completion through normal assessed-topic reconciliation must
+        calculate frozen_deadline from phase.end_day and save that phase-end day
+        into expected_end_day_snapshot, remaining immutable on subsequent reconciliation."""
+        sub = Subject.objects.create(name='Null Snap First Comp Subj', slug='null-snap-first-comp-sub')
+        phase = LearningPhase.objects.create(subject=sub, name='Null Snap Phase', start_day=1, end_day=12)
+        topic = Topic.objects.create(
+            subject=sub,
+            learning_phase=phase,
+            name='Null Snap Assessed Topic',
+            order=1,
+            status=Topic.STATUS_PUBLISHED,
+            is_active=True,
+            assessment_required=True
+        )
+        q = Question.objects.create(topic=topic, text='Q1', order=1, is_active=True)
+        Choice.objects.create(question=q, text='Correct', is_correct=True)
+
+        # Progress record exists first with IN_PROGRESS and null snapshot
+        tp = TopicProgress.objects.create(
+            user=self.learner,
+            topic=topic,
+            status=TopicProgress.STATUS_IN_PROGRESS,
+            expected_end_day_snapshot=None
+        )
+
+        # Passing quiz attempt
+        att = QuizAttempt.objects.create(
+            user=self.learner,
+            topic=topic,
+            attempt_number=1,
+            correct_count=1,
+            total_questions=1,
+            score=100,
+            passed=True,
+            passing_score_used=75
+        )
+        QuizResponse.objects.create(attempt=att, question=q, is_correct=True)
+
+        # Reconcile ordinary application completion path
+        tp_reconciled = reconcile_topic_progress(self.learner, topic)
+
+        # Verify completion and frozen deadline
+        self.assertEqual(tp_reconciled.status, TopicProgress.STATUS_COMPLETED)
+        self.assertEqual(tp_reconciled.completed_at, att.created_at)
+        expected_deadline = calculate_nominal_deadline(self.doj, 12)
+        self.assertEqual(tp_reconciled.frozen_deadline, expected_deadline)
+
+        # Option B requirement: at genuine first completion, phase-end day
+        # used for deadline should also be saved into expected_end_day_snapshot
+        self.assertEqual(tp_reconciled.expected_end_day_snapshot, 12)
+
+        # Verify database persistence
+        tp.refresh_from_db()
+        self.assertEqual(tp.expected_end_day_snapshot, 12)
+        self.assertEqual(tp.frozen_deadline, expected_deadline)
+
+        # Idempotence: subsequent reconciliation preserves snapshot and deadline
+        tp_again = reconcile_topic_progress(self.learner, topic)
+        self.assertEqual(tp_again.expected_end_day_snapshot, 12)
+        self.assertEqual(tp_again.frozen_deadline, expected_deadline)
+        self.assertEqual(tp_again.status, TopicProgress.STATUS_COMPLETED)
+        self.assertEqual(tp_again.completed_at, att.created_at)
+
     def test_completed_topic_immutability_retains_frozen_deadline_despite_schedule_changes(self):
         """5. A completed topic with an existing frozen deadline retains that deadline
         despite subsequent phase schedule drift, and reconciliation never overwrites it."""

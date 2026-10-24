@@ -113,7 +113,11 @@ def _mark_topic_completed_locked(progress, topic, user, completion_time=None):
             else (topic.learning_phase.end_day if (topic.learning_phase_id and topic.learning_phase) else None)
         )
         progress.frozen_deadline = calculate_nominal_deadline(doj, end_day)
-        progress.save(update_fields=['status', 'completed_at', 'frozen_deadline'])
+        update_fields = ['status', 'completed_at', 'frozen_deadline']
+        if (progress.expected_end_day_snapshot is None or progress.expected_end_day_snapshot < 1) and end_day is not None and end_day >= 1:
+            progress.expected_end_day_snapshot = end_day
+            update_fields.append('expected_end_day_snapshot')
+        progress.save(update_fields=update_fields)
 
     return progress
 
@@ -357,6 +361,7 @@ def calculate_reconciled_fields(
     status = current_status
     completed_at = current_completed_at
     frozen_deadline = current_frozen_deadline
+    snapshot = expected_end_day_snapshot
 
     if topic_assessment_required:
         has_passed = any(a['passed'] for a in fully_graded)
@@ -381,6 +386,8 @@ def calculate_reconciled_fields(
                         else phase_end_day
                     )
                     frozen_deadline = calculate_nominal_deadline(date_of_joining, effective_end_day)
+                    if (snapshot is None or snapshot < 1) and phase_end_day is not None and phase_end_day >= 1:
+                        snapshot = phase_end_day
             else:
                 # Legacy repair & Immutability:
                 status = TopicProgress.STATUS_COMPLETED
@@ -409,6 +416,7 @@ def calculate_reconciled_fields(
         'status': status,
         'completed_at': completed_at,
         'frozen_deadline': frozen_deadline,
+        'expected_end_day_snapshot': snapshot,
     }
 
 def reconcile_topic_progress(user, topic):
@@ -461,7 +469,12 @@ def reconcile_topic_progress(user, topic):
         tp.completed_at = result['completed_at']
         tp.frozen_deadline = result['frozen_deadline']
 
-        tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at', 'frozen_deadline'])
+        update_fields = ['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at', 'frozen_deadline']
+        if 'expected_end_day_snapshot' in result and result['expected_end_day_snapshot'] != tp.expected_end_day_snapshot:
+            tp.expected_end_day_snapshot = result['expected_end_day_snapshot']
+            update_fields.append('expected_end_day_snapshot')
+
+        tp.save(update_fields=update_fields)
         return tp
 
 def submit_quiz_attempt(user, topic, submitted_answers, session_question_ids=None):
