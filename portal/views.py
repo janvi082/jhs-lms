@@ -21,6 +21,7 @@ from progress.services import (
     calculate_nominal_deadline,
     annotate_progress_with_review_status,
     PhasePerformanceStatus,
+    get_portal_progress_report_data,
 )
 from .decorators import admin_required
 from access.models import LearnerAccess
@@ -1240,18 +1241,142 @@ def portal_learners_list(request):
 
 @admin_required
 def portal_progress_list(request):
-    learners = User.objects.filter(role=User.ROLE_LEARNER).order_by('-date_joined')
-    learners_data = []
+    report_data = get_portal_progress_report_data()
+    summary = report_data['summary']
+    all_learners_data = report_data['learners_data']
 
-    for l in learners:
-        prog = get_overall_learner_progress(l)
-        learners_data.append({
-            'learner': l,
-            'overall_progress': prog,
-        })
+    today = timezone.localdate()
+    for item in all_learners_data:
+        doj = item['learner'].date_of_joining
+        item['learning_day'] = (today - doj).days + 1 if doj else None
+        p_counts = item['phase_counts']
+        item['completed_phases_count'] = (
+            p_counts.get('completed_on_time', 0) +
+            p_counts.get('completed_late', 0) +
+            p_counts.get('completed_timing_unavailable', 0)
+        )
+        item['total_phases_count'] = p_counts.get('total_assigned', 0)
+
+    # Dynamic Learning Phases for filter dropdown
+    available_phases = list(
+        LearningPhase.objects.filter(subject__is_active=True)
+        .select_related('subject')
+        .order_by('subject__order', 'subject__name', 'start_day', 'id')
+    )
+
+    q = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', 'all').strip().lower()
+    phase_filter = request.GET.get('phase', '').strip()
+    sort_by = request.GET.get('sort', 'needs_attention').strip().lower()
+
+    STATUS_MAP = {
+        'all': None,
+        'overdue': 'overdue',
+        'due_soon': 'due_soon',
+        'on_track': 'on_track',
+        'completed': 'completed_all',
+        'completed_all': 'completed_all',
+        'upcoming': 'upcoming',
+        'missing_joining_date': 'no_doj',
+        'no_doj': 'no_doj',
+        'no_assigned_phases': 'no_phase',
+        'no_phase': 'no_phase',
+        'timing_unavailable': 'timing_unavailable',
+    }
+
+    if status_filter not in STATUS_MAP:
+        status_filter = 'all'
+    target_primary_status = STATUS_MAP.get(status_filter)
+
+    selected_phase_id = None
+    if phase_filter:
+        try:
+            candidate_id = int(phase_filter)
+            if any(p.id == candidate_id for p in available_phases):
+                selected_phase_id = candidate_id
+            else:
+                phase_filter = ''
+        except (ValueError, TypeError):
+            phase_filter = ''
+
+    # Filter cohort learners
+    filtered_learners = []
+    q_lower = q.lower()
+
+    for item in all_learners_data:
+        learner = item['learner']
+
+        # 1. Search filter: name, username, email
+        if q_lower:
+            full_name = (learner.get_full_name() or '').lower()
+            username = (learner.username or '').lower()
+            email = (learner.email or '').lower()
+            if q_lower not in full_name and q_lower not in username and q_lower not in email:
+                continue
+
+        # 2. Status filter
+        if target_primary_status is not None:
+            if item['primary_status'] != target_primary_status:
+                continue
+
+        # 3. Learning Phase filter
+        if selected_phase_id is not None:
+            has_phase = any(
+                p['phase'].id == selected_phase_id and not p.get('is_empty')
+                for p in item['phases_detail']
+            )
+            if not has_phase:
+                continue
+
+        filtered_learners.append(item)
+
+    # Sorting
+    NEEDS_ATTENTION_PRIORITY = {
+        'overdue': 0,
+        'due_soon': 1,
+        'timing_unavailable': 2,
+        'no_doj': 3,
+        'no_phase': 4,
+        'on_track': 5,
+        'upcoming': 6,
+        'completed_all': 7,
+    }
+
+    VALID_SORTS = {
+        'needs_attention', 'name', 'name_asc', 'name_desc',
+        'progress', 'progress_desc', 'progress_asc', 'date_joined_desc'
+    }
+    if sort_by not in VALID_SORTS:
+        sort_by = 'needs_attention'
+
+    if sort_by == 'name_desc':
+        filtered_learners.sort(key=lambda x: (x['learner'].get_full_name() or x['learner'].username).lower(), reverse=True)
+    elif sort_by in ('name', 'name_asc'):
+        filtered_learners.sort(key=lambda x: (x['learner'].get_full_name() or x['learner'].username).lower())
+    elif sort_by in ('progress', 'progress_desc'):
+        filtered_learners.sort(key=lambda x: (-x['overall_progress'], (x['learner'].get_full_name() or x['learner'].username).lower()))
+    elif sort_by == 'progress_asc':
+        filtered_learners.sort(key=lambda x: (x['overall_progress'], (x['learner'].get_full_name() or x['learner'].username).lower()))
+    elif sort_by == 'date_joined_desc':
+        filtered_learners.sort(key=lambda x: x['learner'].date_joined, reverse=True)
+    else:
+        # Default: needs_attention
+        filtered_learners.sort(key=lambda x: (
+            NEEDS_ATTENTION_PRIORITY.get(x['primary_status'], 99),
+            x['overall_progress'],
+            (x['learner'].get_full_name() or x['learner'].username).lower()
+        ))
 
     context = {
-        'learners_data': learners_data,
+        'summary': summary,
+        'learners_data': filtered_learners,
+        'total_filtered_count': len(filtered_learners),
+        'available_phases': available_phases,
+        'q': q,
+        'status_filter': status_filter,
+        'phase_filter': phase_filter,
+        'sort_by': sort_by,
+        'has_active_filters': bool(q or (status_filter != 'all') or phase_filter or (sort_by != 'needs_attention')),
     }
     return render(request, 'portal/progress_list.html', context)
 

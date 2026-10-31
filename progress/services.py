@@ -114,6 +114,9 @@ def _mark_topic_completed_locked(progress, topic, user, completion_time=None):
         )
         progress.frozen_deadline = calculate_nominal_deadline(doj, end_day)
         update_fields = ['status', 'completed_at', 'frozen_deadline']
+        if progress.frozen_deadline is not None:
+            progress.timing_provenance = TopicProgress.PROVENANCE_SYSTEM_CAPTURED
+            update_fields.append('timing_provenance')
         if (progress.expected_end_day_snapshot is None or progress.expected_end_day_snapshot < 1) and end_day is not None and end_day >= 1:
             progress.expected_end_day_snapshot = end_day
             update_fields.append('expected_end_day_snapshot')
@@ -344,7 +347,8 @@ def calculate_reconciled_fields(
     current_frozen_deadline=None,
     date_of_joining=None,
     phase_end_day=None,
-    expected_end_day_snapshot=None
+    expected_end_day_snapshot=None,
+    current_timing_provenance=None
 ):
     from progress.models import TopicProgress
 
@@ -362,6 +366,7 @@ def calculate_reconciled_fields(
     completed_at = current_completed_at
     frozen_deadline = current_frozen_deadline
     snapshot = expected_end_day_snapshot
+    timing_provenance = current_timing_provenance
 
     if topic_assessment_required:
         has_passed = any(a['passed'] for a in fully_graded)
@@ -376,6 +381,7 @@ def calculate_reconciled_fields(
                     status = TopicProgress.STATUS_IN_PROGRESS
                     completed_at = None
                     frozen_deadline = None
+                    timing_provenance = None
                 else:
                     status = TopicProgress.STATUS_COMPLETED
                     completed_at = earliest_passed['created_at']
@@ -386,6 +392,10 @@ def calculate_reconciled_fields(
                         else phase_end_day
                     )
                     frozen_deadline = calculate_nominal_deadline(date_of_joining, effective_end_day)
+                    if frozen_deadline is not None:
+                        timing_provenance = TopicProgress.PROVENANCE_SYSTEM_CAPTURED
+                    else:
+                        timing_provenance = None
                     if (snapshot is None or snapshot < 1) and phase_end_day is not None and phase_end_day >= 1:
                         snapshot = phase_end_day
             else:
@@ -393,21 +403,25 @@ def calculate_reconciled_fields(
                 status = TopicProgress.STATUS_COMPLETED
                 if completed_at is None:
                     completed_at = earliest_passed['created_at']
-                # frozen_deadline is preserved as current_frozen_deadline (never backfilled, never overwritten)
+                # frozen_deadline and timing_provenance are preserved (never backfilled, never overwritten)
+                timing_provenance = current_timing_provenance
 
         elif current_status == TopicProgress.STATUS_COMPLETED:
             # Option 2B (Status-Trust): Routine reconciliation trusts an established completion
             status = TopicProgress.STATUS_COMPLETED
-            # completed_at and frozen_deadline remain unchanged
+            # completed_at, frozen_deadline, and timing_provenance remain unchanged
+            timing_provenance = current_timing_provenance
 
         elif attempts_count > 0:
             status = TopicProgress.STATUS_IN_PROGRESS
             completed_at = None
             frozen_deadline = None
+            timing_provenance = None
         else:
             status = TopicProgress.STATUS_NOT_STARTED
             completed_at = None
             frozen_deadline = None
+            timing_provenance = None
 
     return {
         'attempts_count': attempts_count,
@@ -417,6 +431,7 @@ def calculate_reconciled_fields(
         'completed_at': completed_at,
         'frozen_deadline': frozen_deadline,
         'expected_end_day_snapshot': snapshot,
+        'timing_provenance': timing_provenance,
     }
 
 def reconcile_topic_progress(user, topic):
@@ -459,7 +474,8 @@ def reconcile_topic_progress(user, topic):
             current_frozen_deadline=tp.frozen_deadline,
             date_of_joining=doj,
             phase_end_day=phase_end_day,
-            expected_end_day_snapshot=tp.expected_end_day_snapshot
+            expected_end_day_snapshot=tp.expected_end_day_snapshot,
+            current_timing_provenance=tp.timing_provenance,
         )
 
         tp.attempts_count = result['attempts_count']
@@ -468,8 +484,17 @@ def reconcile_topic_progress(user, topic):
         tp.status = result['status']
         tp.completed_at = result['completed_at']
         tp.frozen_deadline = result['frozen_deadline']
+        tp.timing_provenance = result['timing_provenance']
 
-        update_fields = ['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at', 'frozen_deadline']
+        update_fields = [
+            'attempts_count',
+            'best_score',
+            'latest_score',
+            'status',
+            'completed_at',
+            'frozen_deadline',
+            'timing_provenance',
+        ]
         if 'expected_end_day_snapshot' in result and result['expected_end_day_snapshot'] != tp.expected_end_day_snapshot:
             tp.expected_end_day_snapshot = result['expected_end_day_snapshot']
             update_fields.append('expected_end_day_snapshot')
@@ -1209,7 +1234,8 @@ def get_portal_progress_report_data(as_of_date=None):
         topic_id__in=topic_ids
     ).only(
         'id', 'user_id', 'topic_id', 'status', 'best_score', 'latest_score',
-        'attempts_count', 'completed_at', 'expected_end_day_snapshot'
+        'attempts_count', 'completed_at', 'expected_end_day_snapshot', 'frozen_deadline',
+        'timing_provenance'
     )
     progress_by_learner_topic = {(p.user_id, p.topic_id): p for p in progresses}
 
@@ -1402,7 +1428,18 @@ def get_portal_progress_report_data(as_of_date=None):
             primary_status = 'completed_all'
             primary_status_label = 'Completed'
             primary_status_class = 'bg-success'
-        elif all(p['status'] == PhasePerformanceStatus.UPCOMING for p in non_empty_phases):
+        elif any(p['status'] in (
+            PhasePerformanceStatus.COMPLETED_TIMING_UNAVAILABLE,
+            PhasePerformanceStatus.INCOMPLETE_TIMING_UNAVAILABLE
+        ) for p in non_empty_phases):
+            primary_status = 'timing_unavailable'
+            primary_status_label = 'Timing Unavailable'
+            primary_status_class = 'bg-light text-dark border'
+        elif all(p['status'] in (
+            PhasePerformanceStatus.COMPLETED_ON_TIME,
+            PhasePerformanceStatus.COMPLETED_LATE,
+            PhasePerformanceStatus.UPCOMING
+        ) for p in non_empty_phases):
             primary_status = 'upcoming'
             primary_status_label = 'Upcoming'
             primary_status_class = 'bg-secondary'
@@ -1461,3 +1498,295 @@ def get_portal_progress_report_data(as_of_date=None):
         'summary': summary,
         'learners_data': learners_data,
     }
+
+
+# ==============================================================================
+# HISTORICAL TIMING PROVENANCE AUDIT TRAIL SERVICES
+# ==============================================================================
+
+class StaleRollbackError(ValueError):
+    """Raised when attempting to rollback an audit entry whose post-audit state has diverged or been rolled back."""
+    pass
+
+
+def apply_timing_reconstruction_with_audit(
+    topic_progress,
+    new_frozen_deadline,
+    new_expected_end_day_snapshot=None,
+    new_timing_provenance=TopicProgress.PROVENANCE_RETROSPECTIVELY_RECONSTRUCTED,
+    new_status=None,
+    new_completed_at=None,
+    repair_batch_id=None,
+    action=None,
+    reason="Historical timing reconstruction under approved policy",
+    actor=None,
+):
+    """
+    Applies a historical timing reconstruction or manual correction to a TopicProgress record,
+    atomically creating an append-only TopicProgressTimingAudit entry in the same transaction.
+
+    Guarantees:
+    - Atomicity: TopicProgress update and audit entry creation occur in the same database transaction.
+    - Idempotency: If before and after values are identical (no field actually changed),
+      no update is performed and NO audit entry is created.
+    - Before and after values capture actual database values.
+    """
+    from progress.models import TopicProgressTimingAudit
+    import uuid
+
+    if action is None:
+        action = TopicProgressTimingAudit.ACTION_HISTORICAL_RECONSTRUCTION
+
+    if repair_batch_id is None:
+        repair_batch_id = uuid.uuid4()
+
+    with transaction.atomic():
+        tp_id = topic_progress if isinstance(topic_progress, (int, str)) else topic_progress.id
+        tp = TopicProgress.objects.select_for_update().get(id=int(tp_id))
+
+        before_expected_end_day_snapshot = tp.expected_end_day_snapshot
+        before_frozen_deadline = tp.frozen_deadline
+        before_timing_provenance = tp.timing_provenance
+        before_status = tp.status
+        before_completed_at = tp.completed_at
+
+        target_expected_end_day_snapshot = (
+            new_expected_end_day_snapshot
+            if new_expected_end_day_snapshot is not None
+            else before_expected_end_day_snapshot
+        )
+        target_frozen_deadline = new_frozen_deadline
+        target_timing_provenance = new_timing_provenance
+        target_status = new_status if new_status is not None else before_status
+        target_completed_at = new_completed_at if new_completed_at is not None else before_completed_at
+
+        # Check if anything actually changes
+        has_changes = (
+            before_expected_end_day_snapshot != target_expected_end_day_snapshot
+            or before_frozen_deadline != target_frozen_deadline
+            or before_timing_provenance != target_timing_provenance
+            or before_status != target_status
+            or before_completed_at != target_completed_at
+        )
+
+        if not has_changes:
+            return None, False
+
+        # Apply update
+        tp.expected_end_day_snapshot = target_expected_end_day_snapshot
+        tp.frozen_deadline = target_frozen_deadline
+        tp.timing_provenance = target_timing_provenance
+        tp.status = target_status
+        tp.completed_at = target_completed_at
+
+        update_fields = [
+            'expected_end_day_snapshot',
+            'frozen_deadline',
+            'timing_provenance',
+            'status',
+            'completed_at',
+        ]
+        tp.save(update_fields=update_fields)
+
+        # Create audit entry
+        audit_entry = TopicProgressTimingAudit.objects.create(
+            topic_progress=tp,
+            original_topic_progress_id=tp.id,
+            repair_batch_id=repair_batch_id,
+            action=action,
+            reason=reason or "Historical timing reconstruction under approved policy",
+            before_expected_end_day_snapshot=before_expected_end_day_snapshot,
+            after_expected_end_day_snapshot=target_expected_end_day_snapshot,
+            before_frozen_deadline=before_frozen_deadline,
+            after_frozen_deadline=target_frozen_deadline,
+            before_timing_provenance=before_timing_provenance,
+            after_timing_provenance=target_timing_provenance,
+            before_status=before_status,
+            after_status=target_status,
+            before_completed_at=before_completed_at,
+            after_completed_at=target_completed_at,
+            actor=actor,
+        )
+
+        return audit_entry, True
+
+
+def rollback_timing_reconstruction_with_audit(
+    audit_entry,
+    reason,
+    actor=None,
+    rollback_batch_id=None,
+):
+    """
+    Rolls back the changes recorded in a TopicProgressTimingAudit entry.
+    Restores the TopicProgress record to the 'before' values of the given audit entry,
+    and creates a NEW audit entry with action='rollback' and explicit link reverted_audit_entry.
+
+    Guarantees:
+    - Safe Rollback Validation: Verifies all five fields on the current TopicProgress row match
+      audit_entry.after_* values. If even one field has diverged, raises StaleRollbackError without modifying.
+    - Duplicate Rollback Prevention: Validates that audit_entry has not already been rolled back.
+      Enforced both via application check and database UNIQUE constraint on reverted_audit_entry.
+    - Non-Rollback of Rollbacks: Rejects rolling back a rollback entry.
+    - Never modifies or deletes the original audit entry (append-only).
+    """
+    from progress.models import TopicProgressTimingAudit
+    import uuid
+
+    if rollback_batch_id is None:
+        rollback_batch_id = uuid.uuid4()
+
+    with transaction.atomic():
+        # 1. Lock the audit entry itself to serialize concurrent rollback attempts
+        locked_audit = TopicProgressTimingAudit.objects.select_for_update().get(id=audit_entry.id)
+
+        # 2. Check if the audit entry is itself a rollback entry
+        if locked_audit.action == TopicProgressTimingAudit.ACTION_ROLLBACK:
+            raise StaleRollbackError(f"Audit entry #{locked_audit.id} is a rollback entry and cannot be rolled back.")
+
+        # 3. Check if this audit entry has already been rolled back
+        existing_rollback = TopicProgressTimingAudit.objects.filter(reverted_audit_entry=locked_audit).first()
+        if existing_rollback:
+            raise StaleRollbackError(
+                f"Audit entry #{locked_audit.id} has already been rolled back by audit entry #{existing_rollback.id}."
+            )
+
+        tp_id = locked_audit.original_topic_progress_id or locked_audit.topic_progress_id
+        if not tp_id:
+            raise ValueError(f"Cannot rollback audit entry #{locked_audit.id} without a valid TopicProgress ID.")
+
+        # 4. Lock the TopicProgress row
+        tp = TopicProgress.objects.select_for_update().get(id=tp_id)
+
+        # 5. Compare ALL five current values against locked_audit.after_* values
+        mismatches = []
+        if tp.expected_end_day_snapshot != locked_audit.after_expected_end_day_snapshot:
+            mismatches.append(
+                f"expected_end_day_snapshot (current: {tp.expected_end_day_snapshot}, expected: {locked_audit.after_expected_end_day_snapshot})"
+            )
+        if tp.frozen_deadline != locked_audit.after_frozen_deadline:
+            mismatches.append(
+                f"frozen_deadline (current: {tp.frozen_deadline}, expected: {locked_audit.after_frozen_deadline})"
+            )
+        if tp.timing_provenance != locked_audit.after_timing_provenance:
+            mismatches.append(
+                f"timing_provenance (current: {tp.timing_provenance}, expected: {locked_audit.after_timing_provenance})"
+            )
+        if tp.status != locked_audit.after_status:
+            mismatches.append(
+                f"status (current: {tp.status}, expected: {locked_audit.after_status})"
+            )
+        if tp.completed_at != locked_audit.after_completed_at:
+            mismatches.append(
+                f"completed_at (current: {tp.completed_at}, expected: {locked_audit.after_completed_at})"
+            )
+
+        if mismatches:
+            raise StaleRollbackError(
+                f"Cannot rollback audit entry #{locked_audit.id} on TopicProgress #{tp.id}: "
+                f"current database values have diverged from post-audit state. "
+                f"Mismatches: {', '.join(mismatches)}."
+            )
+
+        # 6. Apply restore to before_* values
+        current_expected_end_day_snapshot = tp.expected_end_day_snapshot
+        current_frozen_deadline = tp.frozen_deadline
+        current_timing_provenance = tp.timing_provenance
+        current_status = tp.status
+        current_completed_at = tp.completed_at
+
+        restore_snapshot = locked_audit.before_expected_end_day_snapshot
+        restore_deadline = locked_audit.before_frozen_deadline
+        restore_provenance = locked_audit.before_timing_provenance
+        restore_status = locked_audit.before_status if locked_audit.before_status else tp.status
+        restore_completed_at = locked_audit.before_completed_at
+
+        tp.expected_end_day_snapshot = restore_snapshot
+        tp.frozen_deadline = restore_deadline
+        tp.timing_provenance = restore_provenance
+        tp.status = restore_status
+        tp.completed_at = restore_completed_at
+
+        update_fields = [
+            'expected_end_day_snapshot',
+            'frozen_deadline',
+            'timing_provenance',
+            'status',
+            'completed_at',
+        ]
+        tp.save(update_fields=update_fields)
+
+        # 7. Create separate rollback audit entry explicitly linked to locked_audit
+        rollback_entry = TopicProgressTimingAudit.objects.create(
+            topic_progress=tp,
+            original_topic_progress_id=tp.id,
+            reverted_audit_entry=locked_audit,
+            repair_batch_id=rollback_batch_id,
+            action=TopicProgressTimingAudit.ACTION_ROLLBACK,
+            reason=reason or f"Rollback of audit entry #{locked_audit.id}",
+            before_expected_end_day_snapshot=current_expected_end_day_snapshot,
+            after_expected_end_day_snapshot=restore_snapshot,
+            before_frozen_deadline=current_frozen_deadline,
+            after_frozen_deadline=restore_deadline,
+            before_timing_provenance=current_timing_provenance,
+            after_timing_provenance=restore_provenance,
+            before_status=current_status,
+            after_status=restore_status,
+            before_completed_at=current_completed_at,
+            after_completed_at=restore_completed_at,
+            actor=actor,
+        )
+
+        return rollback_entry
+
+
+def apply_timing_reconstruction_batch(
+    plans,
+    repair_batch_id=None,
+    common_reason="Historical timing reconstruction under approved policy",
+    actor=None,
+):
+    """
+    Executes a cohort or multi-record timing reconstruction batch within a single outer
+    transaction.atomic() block, guaranteeing all-or-nothing atomicity.
+
+    If any single record update or audit insertion fails:
+    - All TopicProgress updates in this batch roll back.
+    - All audit entries created in this batch roll back.
+    - No partial batch remains committed.
+
+    Each item in `plans` should be a dict or mapping containing:
+    - topic_progress: TopicProgress instance or ID
+    - new_frozen_deadline: Date
+    - new_expected_end_day_snapshot: int (optional)
+    - new_timing_provenance: str (optional, defaults to retrospectively_reconstructed)
+    - new_status: str (optional)
+    - new_completed_at: datetime (optional)
+    - reason: str (optional, defaults to common_reason)
+    """
+    import uuid
+
+    if repair_batch_id is None:
+        repair_batch_id = uuid.uuid4()
+
+    created_audits = []
+
+    with transaction.atomic():
+        for plan in plans:
+            tp = plan['topic_progress']
+            audit_entry, changed = apply_timing_reconstruction_with_audit(
+                topic_progress=tp,
+                new_frozen_deadline=plan['new_frozen_deadline'],
+                new_expected_end_day_snapshot=plan.get('new_expected_end_day_snapshot'),
+                new_timing_provenance=plan.get('new_timing_provenance', TopicProgress.PROVENANCE_RETROSPECTIVELY_RECONSTRUCTED),
+                new_status=plan.get('new_status'),
+                new_completed_at=plan.get('new_completed_at'),
+                repair_batch_id=repair_batch_id,
+                action=plan.get('action'),
+                reason=plan.get('reason', common_reason),
+                actor=actor,
+            )
+            if changed and audit_entry:
+                created_audits.append(audit_entry)
+
+    return created_audits, repair_batch_id

@@ -48,6 +48,7 @@ class Command(BaseCommand):
         status_fixes = 0
         completed_at_fixes = 0
         frozen_deadline_fixes = 0
+        timing_provenance_fixes = 0
 
         try:
             with transaction.atomic():
@@ -102,6 +103,7 @@ class Command(BaseCommand):
                         current_completed_at = old_tp.completed_at if not is_missing else None
                         current_frozen_deadline = old_tp.frozen_deadline if not is_missing else None
                         saved_snapshot = old_tp.expected_end_day_snapshot if not is_missing else None
+                        current_timing_provenance = old_tp.timing_provenance if not is_missing else None
 
                         date_of_joining = getattr(user, 'date_of_joining', None)
 
@@ -119,7 +121,8 @@ class Command(BaseCommand):
                             current_frozen_deadline=current_frozen_deadline,
                             date_of_joining=date_of_joining,
                             phase_end_day=None,
-                            expected_end_day_snapshot=saved_snapshot
+                            expected_end_day_snapshot=saved_snapshot,
+                            current_timing_provenance=current_timing_provenance
                         )
 
                         # Preserve existing historical completed_at timestamp if already recorded on an existing record
@@ -154,6 +157,7 @@ class Command(BaseCommand):
                         old_status = current_status if not is_missing else None
                         old_completed_at = current_completed_at if not is_missing else None
                         old_frozen_deadline = current_frozen_deadline if not is_missing else None
+                        old_timing_provenance = current_timing_provenance if not is_missing else None
 
                         if is_missing or old_attempts_count != result['attempts_count']:
                             changes.append(('attempts_count', old_attempts_count, result['attempts_count']))
@@ -173,6 +177,9 @@ class Command(BaseCommand):
                         if is_missing or old_frozen_deadline != result['frozen_deadline']:
                             changes.append(('frozen_deadline', old_frozen_deadline, result['frozen_deadline']))
                             frozen_deadline_fixes += 1
+                        if is_missing or old_timing_provenance != result['timing_provenance']:
+                            changes.append(('timing_provenance', old_timing_provenance, result['timing_provenance']))
+                            timing_provenance_fixes += 1
                         if is_missing and new_snapshot is not None:
                             changes.append(('expected_end_day_snapshot', None, new_snapshot))
 
@@ -200,6 +207,7 @@ class Command(BaseCommand):
                                         status=result['status'],
                                         completed_at=result['completed_at'],
                                         frozen_deadline=result['frozen_deadline'],
+                                        timing_provenance=result['timing_provenance'],
                                         expected_end_day_snapshot=new_snapshot
                                     )
                                 else:
@@ -209,7 +217,8 @@ class Command(BaseCommand):
                                     old_tp.status = result['status']
                                     old_tp.completed_at = result['completed_at']
                                     old_tp.frozen_deadline = result['frozen_deadline']
-                                    old_tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at', 'frozen_deadline'])
+                                    old_tp.timing_provenance = result['timing_provenance']
+                                    old_tp.save(update_fields=['attempts_count', 'best_score', 'latest_score', 'status', 'completed_at', 'frozen_deadline', 'timing_provenance'])
                         else:
                             already_consistent += 1
 
@@ -233,6 +242,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  status fixes: {status_fixes}")
         self.stdout.write(f"  completed_at fixes: {completed_at_fixes}")
         self.stdout.write(f"  frozen_deadline fixes: {frozen_deadline_fixes}")
+        self.stdout.write(f"  timing_provenance fixes: {timing_provenance_fixes}")
 
         if execute:
             self.stdout.write("\nDATABASE UPDATED SUCCESSFULLY.")

@@ -3,56 +3,354 @@
 {% block title %}Learner Progress - JHS Admin Portal{% endblock %}
 
 {% block portal_content %}
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+<!-- Header -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
   <div>
     <h3 class="fw-bold text-dark mb-1">Learner Progress</h3>
-    <p class="text-muted mb-0">Monitor learner progress and view detailed progression reports.</p>
+    <p class="text-muted mb-0">Performance dashboard and learning phase timeline tracking.</p>
   </div>
 </div>
 
-<!-- Progress Table -->
+<!-- KPI Cards -->
+<div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-3 mb-3">
+  <!-- Total Learners -->
+  <div class="col">
+    <div class="card border-0 shadow-sm h-100 bg-white">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="text-muted small fw-medium tracking-wider">Total Learners</div>
+            <div class="fs-3 fw-bold text-dark mt-1">{{ summary.total_learners_count }}</div>
+            <div class="text-muted small mt-1">
+              <span>{{ summary.learners_with_phases_count }} assigned to phases</span>
+            </div>
+          </div>
+          <div class="rounded-3 bg-primary-subtle text-primary p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
+            <i class="bi bi-people-fill fs-4"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- On-Track Learners -->
+  <div class="col">
+    <div class="card border-0 shadow-sm h-100 bg-white">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="text-muted small fw-medium tracking-wider">On-Track Learners</div>
+            <div class="fs-3 fw-bold text-dark mt-1">{{ summary.learner_kpis.on_track }}</div>
+            <div class="text-muted small mt-1">
+              <span class="text-success"><i class="bi bi-check2-circle me-1"></i>Pacing on schedule</span>
+            </div>
+          </div>
+          <div class="rounded-3 bg-info-subtle text-info p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
+            <i class="bi bi-compass-fill fs-4"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overdue Learners -->
+  <div class="col">
+    <div class="card border-0 shadow-sm h-100 bg-white">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="text-muted small fw-medium tracking-wider">Overdue Learners</div>
+            <div class="fs-3 fw-bold {% if summary.learner_kpis.overdue > 0 %}text-danger{% else %}text-dark{% endif %} mt-1">
+              {{ summary.learner_kpis.overdue }}
+            </div>
+            <div class="text-muted small mt-1">
+              {% if summary.learner_kpis.overdue > 0 %}
+                <span class="text-danger fw-medium"><i class="bi bi-exclamation-triangle-fill me-1"></i>Attention required</span>
+              {% else %}
+                <span class="text-muted">No overdue learners</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="rounded-3 {% if summary.learner_kpis.overdue > 0 %}bg-danger-subtle text-danger{% else %}bg-secondary-subtle text-secondary{% endif %} p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
+            <i class="bi bi-clock-history fs-4"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- On-Time Completion Rate -->
+  <div class="col">
+    <div class="card border-0 shadow-sm h-100 bg-white">
+      <div class="card-body p-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="text-muted small fw-medium tracking-wider">On-Time Rate</div>
+            <div class="fs-3 fw-bold text-dark mt-1">{{ summary.phase_kpis.verified_on_time_rate_display }}</div>
+            <div class="text-muted small mt-1">
+              <span>{{ summary.phase_kpis.verified_numerator }} of {{ summary.phase_kpis.verified_denominator }} eligible phases completed on time</span>
+            </div>
+          </div>
+          <div class="rounded-3 bg-success-subtle text-success p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
+            <i class="bi bi-shield-check fs-4"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Compact Secondary Summary Strip -->
+<div class="card border-0 shadow-sm bg-white mb-4">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 text-secondary small">
+      <span class="fw-semibold text-dark text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">
+        <i class="bi bi-bar-chart-steps me-1 text-primary"></i>Breakdown:
+      </span>
+      <span>Due Soon: <strong class="{% if summary.learner_kpis.due_soon > 0 %}text-warning-emphasis{% else %}text-dark{% endif %} fw-semibold">{{ summary.learner_kpis.due_soon }}</strong></span>
+      <span class="opacity-25">|</span>
+      <span>Phases Completed On Time: <strong class="text-success fw-semibold">{{ summary.phase_kpis.completed_on_time_count }}</strong></span>
+      <span class="opacity-25">|</span>
+      <span>Phases Completed Late: <strong class="{% if summary.phase_kpis.completed_late_count > 0 %}text-warning-emphasis{% else %}text-dark{% endif %} fw-semibold">{{ summary.phase_kpis.completed_late_count }}</strong></span>
+      <span class="opacity-25">|</span>
+      <span>Upcoming Phases: <strong class="text-dark fw-semibold">{{ summary.phase_kpis.upcoming_count }}</strong></span>
+      {% if summary.learner_kpis.timing_unavailable > 0 %}
+        <span class="opacity-25">|</span>
+        <span>Timing Unavailable: <strong class="text-dark fw-semibold">{{ summary.learner_kpis.timing_unavailable }}</strong> learners</span>
+      {% endif %}
+      {% if summary.learners_no_doj_count > 0 %}
+        <span class="opacity-25">|</span>
+        <span>Missing DOJ: <strong class="text-secondary fw-semibold">{{ summary.learners_no_doj_count }}</strong></span>
+      {% endif %}
+      {% if summary.learners_no_phases_count > 0 %}
+        <span class="opacity-25">|</span>
+        <span>No Phases: <strong class="text-secondary fw-semibold">{{ summary.learners_no_phases_count }}</strong></span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Search & Filter Controls -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body p-3">
+    <form method="get" action="{% url 'portal_progress' %}" class="row g-2 align-items-center">
+      <!-- Search Input -->
+      <div class="col-12 col-md-4 col-xl-3">
+        <label for="learnerSearchInput" class="visually-hidden">Search learners</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-light border-end-0 text-muted">
+            <i class="bi bi-search"></i>
+          </span>
+          <input type="text"
+                 class="form-control form-control-sm border-start-0 ps-0"
+                 id="learnerSearchInput"
+                 name="q"
+                 value="{{ q }}"
+                 placeholder="Search name, username, email..."
+                 aria-label="Search learners by name, username or email">
+        </div>
+      </div>
+
+      <!-- Status Filter -->
+      <div class="col-6 col-md-3 col-xl-2">
+        <label for="statusFilterSelect" class="visually-hidden">Filter by status</label>
+        <select class="form-select form-select-sm" id="statusFilterSelect" name="status" aria-label="Filter by learner status">
+          <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Statuses</option>
+          <option value="overdue" {% if status_filter == 'overdue' %}selected{% endif %}>Overdue</option>
+          <option value="due_soon" {% if status_filter == 'due_soon' %}selected{% endif %}>Due Soon</option>
+          <option value="on_track" {% if status_filter == 'on_track' %}selected{% endif %}>On Track</option>
+          <option value="completed" {% if status_filter == 'completed' or status_filter == 'completed_all' %}selected{% endif %}>Completed</option>
+          <option value="upcoming" {% if status_filter == 'upcoming' %}selected{% endif %}>Upcoming</option>
+          <option value="missing_joining_date" {% if status_filter == 'missing_joining_date' or status_filter == 'no_doj' %}selected{% endif %}>Missing Joining Date</option>
+          <option value="no_assigned_phases" {% if status_filter == 'no_assigned_phases' or status_filter == 'no_phase' %}selected{% endif %}>No Assigned Phases</option>
+          <option value="timing_unavailable" {% if status_filter == 'timing_unavailable' %}selected{% endif %}>Timing Unavailable</option>
+        </select>
+      </div>
+
+      <!-- Phase Filter -->
+      <div class="col-6 col-md-3 col-xl-3">
+        <label for="phaseFilterSelect" class="visually-hidden">Filter by learning phase</label>
+        <select class="form-select form-select-sm" id="phaseFilterSelect" name="phase" aria-label="Filter by learning phase">
+          <option value="" {% if not phase_filter %}selected{% endif %}>All Learning Phases</option>
+          {% for p in available_phases %}
+            <option value="{{ p.id }}" {% if phase_filter == p.id|stringformat:"s" %}selected{% endif %}>
+              {{ p.subject.name }}: {{ p.name }} (Day {{ p.start_day }}–{{ p.end_day }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Sort Filter -->
+      <div class="col-6 col-md-3 col-xl-2">
+        <label for="sortFilterSelect" class="visually-hidden">Sort order</label>
+        <select class="form-select form-select-sm" id="sortFilterSelect" name="sort" aria-label="Sort learners">
+          <option value="needs_attention" {% if sort_by == 'needs_attention' %}selected{% endif %}>Sort: Needs Attention</option>
+          <option value="name_asc" {% if sort_by == 'name_asc' or sort_by == 'name' %}selected{% endif %}>Sort: Name (A–Z)</option>
+          <option value="name_desc" {% if sort_by == 'name_desc' %}selected{% endif %}>Sort: Name (Z–A)</option>
+          <option value="progress_desc" {% if sort_by == 'progress_desc' or sort_by == 'progress' %}selected{% endif %}>Sort: Progress (High to Low)</option>
+          <option value="progress_asc" {% if sort_by == 'progress_asc' %}selected{% endif %}>Sort: Progress (Low to High)</option>
+          <option value="date_joined_desc" {% if sort_by == 'date_joined_desc' %}selected{% endif %}>Sort: Newest First</option>
+        </select>
+      </div>
+
+      <!-- Actions -->
+      <div class="col-6 col-md-2 col-xl-2 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary flex-grow-1" title="Apply filters" aria-label="Apply filters">
+          <i class="bi bi-funnel-fill me-1"></i> Filter
+        </button>
+        {% if has_active_filters %}
+          <a href="{% url 'portal_progress' %}" class="btn btn-sm btn-outline-secondary" title="Clear all filters" aria-label="Clear all filters">
+            <i class="bi bi-x-circle"></i>
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Learner Table & Status -->
 <div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
+    <div class="small text-muted">
+      Showing <strong class="text-dark">{{ total_filtered_count }}</strong> of <strong class="text-dark">{{ summary.total_learners_count }}</strong> learners
+      {% if has_active_filters %}<span class="badge bg-light text-secondary border ms-1">Filtered</span>{% endif %}
+    </div>
+  </div>
+
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0" aria-label="Learner progress report table">
         <thead class="table-light">
           <tr>
-            <th class="ps-4">Learner Name</th>
-            <th>Username / Email</th>
-            <th style="min-width: 150px;">Overall Progress</th>
-            <th class="text-end pe-4">Actions</th>
+            <th scope="col" class="ps-3 ps-md-4 py-2" style="min-width: 180px;">Learner</th>
+            <th scope="col" class="py-2" style="min-width: 140px;">Joining &amp; Day</th>
+            <th scope="col" class="py-2" style="min-width: 120px;">Primary Status</th>
+            <th scope="col" class="py-2" style="min-width: 160px;">Overall Progress</th>
+            <th scope="col" class="py-2" style="min-width: 180px;">Phase Progress</th>
+            <th scope="col" class="text-end pe-3 pe-md-4 py-2" style="min-width: 110px;">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for item in learners_data %}
           <tr>
-            <td class="ps-4">
-              <div class="text-dark">{{ item.learner.get_full_name|default:item.learner.username }}</div>
-            </td>
-            <td>
-              <div class="text-dark">{{ item.learner.username }}</div>
-              <div class="text-muted small">{{ item.learner.email|default:"No email registered" }}</div>
-            </td>
-            <td>
-              <div class="d-flex align-items-center gap-3">
-                <div class="progress flex-grow-1" style="height: 12px;">
-                  <div class="progress-bar {% if item.overall_progress == 100 %}bg-success{% endif %}" role="progressbar" style="width: {{ item.overall_progress }}%;"></div>
+            <!-- Learner Information -->
+            <td class="ps-3 ps-md-4">
+              <div class="fw-semibold text-dark">{{ item.learner.get_full_name|default:item.learner.username }}</div>
+              <div class="small text-muted font-monospace">@{{ item.learner.username }}</div>
+              {% if item.learner.email %}
+                <div class="small text-muted text-truncate" style="max-width: 220px;" title="{{ item.learner.email }}">
+                  <i class="bi bi-envelope me-1"></i>{{ item.learner.email }}
                 </div>
-                <span class="small">{{ item.overall_progress }}%</span>
-              </div>
+              {% endif %}
             </td>
-            <td class="text-end pe-4">
-              <div class="btn-group btn-group-sm">
-                <a href="{% url 'portal_learner_progress_detail' item.learner.id %}" class="btn btn-outline-primary text-nowrap" title="View Progress" aria-label="View Progress">
-                  <i class="bi bi-bar-chart-fill d-inline d-md-none"></i>
-                  <span class="d-none d-md-inline">View Progress</span>
-                </a>
+
+            <!-- Date of Joining & Current Learning Day -->
+            <td>
+              {% if item.learner.date_of_joining %}
+                <div class="small text-dark fw-medium">{{ item.learner.date_of_joining|date:"M j, Y" }}</div>
+                {% if item.learning_day %}
+                  <span class="badge bg-secondary-subtle text-dark border small fw-medium mt-1">Day {{ item.learning_day }}</span>
+                {% endif %}
+              {% else %}
+                <span class="badge bg-light text-secondary border small">Not set</span>
+              {% endif %}
+            </td>
+
+            <!-- Primary Status Badge -->
+            <td>
+              <span class="badge {{ item.primary_status_class }} fw-medium px-2 py-1">
+                {{ item.primary_status_label }}
+              </span>
+            </td>
+
+            <!-- Overall Progress (Preserving established subject-average progress) -->
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 8px;">
+                  <div class="progress-bar {% if item.overall_progress == 100 %}bg-success{% elif item.overall_progress > 0 %}bg-primary{% endif %}"
+                       role="progressbar"
+                       style="width: {{ item.overall_progress }}%;"
+                       aria-valuenow="{{ item.overall_progress }}"
+                       aria-valuemin="0"
+                       aria-valuemax="100"></div>
+                </div>
+                <span class="small fw-semibold text-dark text-nowrap" style="min-width: 38px;">{{ item.overall_progress }}%</span>
               </div>
+              {% if item.topic_weighted_display != "N/A" and item.accessible_topics_count > 0 %}
+                <div class="text-muted" style="font-size: 0.75rem;">
+                  {{ item.completed_topics_count }} of {{ item.accessible_topics_count }} topics
+                </div>
+              {% endif %}
+            </td>
+
+            <!-- Phase Progress Summary (Does not assume fixed number of phases) -->
+            <td>
+              {% if item.total_phases_count > 0 %}
+                <div class="small text-dark fw-medium mb-1">
+                  {{ item.completed_phases_count }} of {{ item.total_phases_count }} phases completed
+                </div>
+                <div class="d-flex flex-wrap gap-1">
+                  {% if item.phase_counts.overdue > 0 %}
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle py-0 px-1" style="font-size: 0.72rem;">
+                      {{ item.phase_counts.overdue }} overdue
+                    </span>
+                  {% endif %}
+                  {% if item.phase_counts.due_soon > 0 %}
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-0 px-1" style="font-size: 0.72rem;">
+                      {{ item.phase_counts.due_soon }} due soon
+                    </span>
+                  {% endif %}
+                  {% if item.phase_counts.on_track > 0 %}
+                    <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle py-0 px-1" style="font-size: 0.72rem;">
+                      {{ item.phase_counts.on_track }} on track
+                    </span>
+                  {% endif %}
+                  {% if item.phase_counts.upcoming > 0 %}
+                    <span class="badge bg-light text-secondary border py-0 px-1" style="font-size: 0.72rem;">
+                      {{ item.phase_counts.upcoming }} upcoming
+                    </span>
+                  {% endif %}
+                  {% if item.phase_counts.completed_timing_unavailable > 0 %}
+                    <span class="badge bg-secondary-subtle text-secondary border py-0 px-1" style="font-size: 0.72rem;" title="Completed without historical deadline evidence">
+                      {{ item.phase_counts.completed_timing_unavailable }} completed — timing unverified
+                    </span>
+                  {% endif %}
+                  {% if item.phase_counts.incomplete_timing_unavailable > 0 %}
+                    <span class="badge bg-light text-muted border py-0 px-1" style="font-size: 0.72rem;" title="Incomplete with unavailable timing evidence">
+                      {{ item.phase_counts.incomplete_timing_unavailable }} in progress — timing unverified
+                    </span>
+                  {% endif %}
+                </div>
+              {% elif item.primary_status == 'no_doj' %}
+                <span class="text-muted small">DOJ required for phases</span>
+              {% else %}
+                <span class="text-muted small">No assigned phases</span>
+              {% endif %}
+            </td>
+
+            <!-- Action Link to Individual Learner Detail -->
+            <td class="text-end pe-3 pe-md-4">
+              <a href="{% url 'portal_learner_progress_detail' item.learner.id %}"
+                 class="btn btn-sm btn-outline-primary text-nowrap"
+                 title="View Progress for {{ item.learner.username }}"
+                 aria-label="View Progress for {{ item.learner.username }}">
+                <i class="bi bi-bar-chart-fill me-1"></i>
+                <span class="d-none d-lg-inline">View Progress</span>
+              </a>
             </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="4" class="text-center py-4 text-muted">No learners found.</td>
+            <td colspan="6" class="text-center py-5">
+              <div class="text-muted mb-2"><i class="bi bi-search fs-2"></i></div>
+              <h6 class="fw-semibold text-dark">No learners match your criteria</h6>
+              <p class="text-muted small mb-3">Try adjusting your search query, status filter, or learning phase selection.</p>
+              {% if has_active_filters %}
+                <a href="{% url 'portal_progress' %}" class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-x-circle me-1"></i> Clear all filters
+                </a>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
