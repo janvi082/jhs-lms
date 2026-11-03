@@ -60,30 +60,41 @@
           <label class="form-label fw-semibold">Topic Name</label>
           {{ form.name }}
         </div>
-        <div class="col-12">
+
+        <div class="col-md-8">
           <label class="form-label fw-semibold">Topic Summary (2-4 lines)</label>
           {{ form.summary }}
         </div>
-        <div class="row mb-3">
-          <div class="col-md-4">
-            <label class="form-label fw-semibold">Publication Status</label>
-            {{ form.status }}
+        <div class="col-md-4 d-flex align-items-center">
+          <div class="form-check mt-3 mt-md-4">
+            {{ form.acknowledgement_required }}
+            <label class="form-check-label fw-semibold" for="{{ form.acknowledgement_required.id_for_label }}">
+              {{ form.acknowledgement_required.label }}
+            </label>
+            <div class="form-text text-muted small mt-0">
+              Check to require material acknowledgement for topic completion.
+            </div>
           </div>
+        </div>
 
-          <div class="col-md-4">
-            <label class="form-label fw-semibold">Passing Score Override (%)</label>
-            {{ form.passing_score_override }}
-          </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Publication Status</label>
+          {{ form.status }}
+        </div>
 
-          <div class="col-md-4 d-flex align-items-center">
-            <div class="form-check mt-4">
-              {{ form.assessment_required }}
-              <label class="form-check-label fw-semibold" for="{{ form.assessment_required.id_for_label }}">
-                {{ form.assessment_required.label }}
-              </label>
-              <div class="form-text text-muted small mt-0">
-                Uncheck to allow completion without a quiz.
-              </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Passing Score Override (%)</label>
+          {{ form.passing_score_override }}
+        </div>
+
+        <div class="col-md-4 d-flex align-items-center">
+          <div class="form-check mt-3 mt-md-4">
+            {{ form.assessment_required }}
+            <label class="form-check-label fw-semibold" for="{{ form.assessment_required.id_for_label }}">
+              {{ form.assessment_required.label }}
+            </label>
+            <div class="form-text text-muted small mt-0">
+              Uncheck to allow completion without a quiz.
             </div>
           </div>
         </div>
@@ -95,6 +106,16 @@
         <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
         <div>
           <strong>Publish Gate Warning:</strong> This topic currently has <strong>{{ current_question_count }}</strong> question{{ current_question_count|pluralize }}. It requires at least <strong>{{ required_question_count }}</strong> question{{ required_question_count|pluralize }} before it can be set to <strong>Published</strong>.
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Acknowledgement Required Zero Materials Warning -->
+      {% if topic.acknowledgement_required and not has_required_materials %}
+      <div class="alert alert-warning mt-3 mb-0 small d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
+        <div>
+          <strong>Configuration Warning:</strong> Acknowledgement is required for topic completion, but this topic has no required learning materials. Learners will not be able to complete this topic until at least one required material is added.
         </div>
       </div>
       {% endif %}
@@ -200,6 +221,11 @@
               <div class="fw-bold text-dark mb-1">{{ m.title }}</div>
               <div class="text-muted small">
                 <span class="badge bg-light text-dark border me-1">{{ m.get_resource_type_display }}</span>
+                {% if m.is_required %}
+                <span class="badge bg-primary-subtle text-primary border small me-1">Required</span>
+                {% else %}
+                <span class="badge bg-light text-secondary border small me-1">Optional</span>
+                {% endif %}
                 <a href="{{ m.url }}" target="_blank" class="text-decoration-none">Open URL</a>
               </div>
             </div>
@@ -253,6 +279,15 @@
                     <div class="mb-3">
                       <label class="form-label fw-semibold">Description</label>
                       <textarea name="description" class="form-control" rows="2">{{ m.description }}</textarea>
+                    </div>
+                    <div class="form-check mb-3">
+                      <input class="form-check-input" type="checkbox" name="is_required" id="is_required_{{ m.id }}" {% if m.is_required %}checked{% endif %}>
+                      <label class="form-check-label fw-semibold" for="is_required_{{ m.id }}">
+                        Required Material
+                      </label>
+                      <div class="form-text text-muted small">
+                        Learners must acknowledge this material to complete the topic.
+                      </div>
                     </div>
                   </div>
                   <div class="modal-footer">
@@ -354,6 +389,15 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Description</label>
             {{ resource_form.description }}
+          </div>
+          <div class="form-check mb-3">
+            {{ resource_form.is_required }}
+            <label class="form-check-label fw-semibold" for="{{ resource_form.is_required.id_for_label }}">
+              {{ resource_form.is_required.label }}
+            </label>
+            <div class="form-text text-muted small">
+              Learners must acknowledge this material to complete the topic.
+            </div>
           </div>
         </div>
         <div class="modal-footer">

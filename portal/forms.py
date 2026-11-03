@@ -36,7 +36,7 @@ class SubjectForm(forms.ModelForm):
 class TopicForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'learning_phase', 'name', 'summary', 'status', 'passing_score_override', 'assessment_required']
+        fields = ['subject', 'learning_phase', 'name', 'summary', 'status', 'passing_score_override', 'assessment_required', 'acknowledgement_required']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
             'learning_phase': forms.Select(attrs={'class': 'form-select'}),
@@ -45,12 +45,14 @@ class TopicForm(forms.ModelForm):
             'status': forms.Select(attrs={'class': 'form-select'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
             'assessment_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'acknowledgement_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
             'learning_phase': 'Learning Phase',
             'status': 'Publication Status',
             'passing_score_override': 'Passing Score Override (%)',
             'assessment_required': 'Assessment Required',
+            'acknowledgement_required': 'Acknowledgement Required',
         }
 
     def __init__(self, *args, **kwargs):
@@ -70,7 +72,7 @@ class TopicForm(forms.ModelForm):
 class TopicAddForm(forms.ModelForm):
     class Meta:
         model = Topic
-        fields = ['subject', 'learning_phase', 'name', 'summary', 'passing_score_override', 'assessment_required']
+        fields = ['subject', 'learning_phase', 'name', 'summary', 'passing_score_override', 'assessment_required', 'acknowledgement_required']
         widgets = {
             'subject': forms.Select(attrs={'class': 'form-select'}),
             'learning_phase': forms.Select(attrs={'class': 'form-select'}),
@@ -78,11 +80,13 @@ class TopicAddForm(forms.ModelForm):
             'summary': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '2-4 line short summary...'}),
             'passing_score_override': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank to use default (75%)'}),
             'assessment_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'acknowledgement_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
             'learning_phase': 'Learning Phase',
             'passing_score_override': 'Passing Score Override (%)',
             'assessment_required': 'Assessment Required',
+            'acknowledgement_required': 'Acknowledgement Required',
         }
 
     def __init__(self, *args, **kwargs):
@@ -122,12 +126,16 @@ class VideoForm(forms.ModelForm):
 class ResourceForm(forms.ModelForm):
     class Meta:
         model = Resource
-        fields = ['title', 'resource_type', 'url', 'description']
+        fields = ['title', 'resource_type', 'url', 'description', 'is_required']
         widgets = {
             'title': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Material Title'}),
             'resource_type': forms.Select(attrs={'class': 'form-select'}),
             'url': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'https://onedrive.live.com/... or file link'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Optional description...'}),
+            'is_required': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+        labels = {
+            'is_required': 'Required Material',
         }
 
     def clean_url(self):

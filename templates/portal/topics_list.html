@@ -242,6 +242,16 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
           </div>
 
+          <div class="form-check mb-3">
+            {{ form.acknowledgement_required }}
+            <label class="form-check-label fw-semibold" for="{{ form.acknowledgement_required.id_for_label }}">
+              {{ form.acknowledgement_required.label }}
+            </label>
+            <div class="form-text text-muted small">
+              Check to require material acknowledgement for topic completion.
+            </div>
+          </div>
+
           <div class="alert alert-info small mb-0">
             <i class="bi bi-info-circle me-1"></i> Topics are saved as <strong>Draft</strong> initially. If Assessment Required is enabled, the configured minimum questions must be added before publishing.
           </div>

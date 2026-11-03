@@ -89,7 +89,7 @@
           </h5>
           <p class="text-muted small mb-0 text-truncate-1" style="max-width: 600px;">{{ item.topic.summary }}</p>
           {% if item.access_state == 'LOCKED_SEQUENTIAL' %}
-          <div class="text-muted small fw-bold mt-1">Complete the previous topic to unlock</div>
+          <div class="text-muted small fw-bold mt-1">{{ item.lock_reason|default:"Complete the previous topic to unlock" }}</div>
           {% elif item.access_state == 'UPCOMING' %}
           <div class="text-muted small fw-bold mt-1">Available from Day {{ item.topic.learning_phase.start_day }}</div>
           {% endif %}

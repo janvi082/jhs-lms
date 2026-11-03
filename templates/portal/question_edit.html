@@ -375,37 +375,38 @@
           </div>
 
           <!-- SINGLE CHOICE FIELDS -->
-            <div id="singleChoiceFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'single' %}style="display: none;"{% endif %}{% elif q.question_type != 'single' %}style="display: none;"{% endif %}>
-              <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
-              {% for i in '123456'|make_list %}
-                <div class="input-group mb-2">
-                  <input type="hidden" name="choice_id_{{ forloop.counter }}" id="sc_id_{{ q.id }}_{{ forloop.counter }}">
-                  <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="{{ forloop.counter }}" id="sc_correct_{{ q.id }}_{{ forloop.counter }}"></div>
-                  <input type="text" name="choice_{{ forloop.counter }}" id="sc_text_{{ q.id }}_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text">
-                </div>
-              {% endfor %}
-            </div>
+          <div id="singleChoiceFields" {% if submitted_data and submitted_data.question_type != 'single' %}style="display: none;"{% endif %}>
+            <label class="form-label fw-semibold mb-2">Answer Choices (Select radio button for the single correct answer)</label>
+            {% for i in '123456'|make_list %}
+              <div class="input-group mb-2">
+                <input type="hidden" name="choice_id_{{ forloop.counter }}" id="sc_id_{{ forloop.counter }}">
+                <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="correct_choice" value="{{ forloop.counter }}" id="sc_correct_{{ forloop.counter }}" {% if submitted_data.correct_choice == forloop.counter|stringformat:'s' %}checked{% elif not submitted_data and forloop.first %}checked{% endif %}></div>
+                <input type="text" name="choice_{{ forloop.counter }}" id="sc_text_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text{% if forloop.counter > 2 %} (optional){% endif %}" value="{% if forloop.counter == 1 %}{{ submitted_data.choice_1|default:'' }}{% elif forloop.counter == 2 %}{{ submitted_data.choice_2|default:'' }}{% elif forloop.counter == 3 %}{{ submitted_data.choice_3|default:'' }}{% elif forloop.counter == 4 %}{{ submitted_data.choice_4|default:'' }}{% elif forloop.counter == 5 %}{{ submitted_data.choice_5|default:'' }}{% elif forloop.counter == 6 %}{{ submitted_data.choice_6|default:'' }}{% endif %}">
+              </div>
+            {% endfor %}
+          </div>
 
           <!-- MULTIPLE CHOICE FIELDS -->
-            <div id="multipleChoiceFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'multiple' %}style="display: none;"{% endif %}{% elif q.question_type != 'multiple' %}style="display: none;"{% endif %}>
-              <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
-              {% for i in '123456'|make_list %}
-                <div class="input-group mb-2">
-                  <input type="hidden" name="choice_id_{{ forloop.counter }}" id="mc_id_{{ q.id }}_{{ forloop.counter }}">
-                  <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="{{ forloop.counter }}" id="mc_correct_{{ q.id }}_{{ forloop.counter }}"></div>
-                  <input type="text" name="choice_{{ forloop.counter }}" id="mc_text_{{ q.id }}_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text">
-                </div>
-              {% endfor %}
-            </div>
+          <div id="multipleChoiceFields" {% if submitted_data.question_type != 'multiple' or not submitted_data %}style="display: none;"{% endif %}>
+            <label class="form-label fw-semibold mb-2">Answer Choices (Check boxes for all correct answers)</label>
+            {% for i in '123456'|make_list %}
+              <div class="input-group mb-2">
+                <input type="hidden" name="choice_id_{{ forloop.counter }}" id="mc_id_{{ forloop.counter }}">
+                <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="correct_choices" value="{{ forloop.counter }}" id="mc_correct_{{ forloop.counter }}" {% if forloop.counter|stringformat:'s' in submitted_data.correct_choices_list %}checked{% endif %}></div>
+                <input type="text" name="choice_{{ forloop.counter }}" id="mc_text_{{ forloop.counter }}" class="form-control" placeholder="Choice {{ forloop.counter }} text{% if forloop.counter > 2 %} (optional){% endif %}" value="{% if forloop.counter == 1 %}{{ submitted_data.choice_1|default:'' }}{% elif forloop.counter == 2 %}{{ submitted_data.choice_2|default:'' }}{% elif forloop.counter == 3 %}{{ submitted_data.choice_3|default:'' }}{% elif forloop.counter == 4 %}{{ submitted_data.choice_4|default:'' }}{% elif forloop.counter == 5 %}{{ submitted_data.choice_5|default:'' }}{% elif forloop.counter == 6 %}{{ submitted_data.choice_6|default:'' }}{% endif %}">
+              </div>
+            {% endfor %}
+          </div>
 
           <!-- TRUE / FALSE FIELDS -->
-            <div id="trueFalseFields_{{ q.id }}" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.question_type != 'true_false' %}style="display: none;"{% endif %}{% elif q.question_type != 'true_false' %}style="display: none;"{% endif %}>
-              <label class="form-label fw-semibold mb-2">Correct Answer</label>
-              <select name="tf_correct" class="form-select">
-                <option value="true" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.tf_correct == 'true' %}selected{% endif %}{% else %}{% for c in q.choices.all %}{% if c.is_correct and c.text == 'True' %}selected{% endif %}{% endfor %}{% endif %}>True</option>
-                <option value="false" {% if editing_question_id == q.id and submitted_data %}{% if submitted_data.tf_correct == 'false' %}selected{% endif %}{% else %}{% for c in q.choices.all %}{% if c.is_correct and c.text == 'False' %}selected{% endif %}{% endfor %}{% endif %}>False</option>
-              </select>
-            </div>
+          <div id="trueFalseFields" {% if submitted_data.question_type != 'true_false' or not submitted_data %}style="display: none;"{% endif %}>
+            <label class="form-label fw-semibold mb-2">Correct Answer</label>
+            <select name="tf_correct" class="form-select">
+              <option value="true" {% if submitted_data.tf_correct == 'true' or not submitted_data %}selected{% endif %}>True</option>
+              <option value="false" {% if submitted_data.tf_correct == 'false' %}selected{% endif %}>False</option>
+            </select>
+          </div>
+
 <!-- SHORT ANSWER FIELDS -->
           <div id="shortAnswerFields" style="display: none;">
             <label class="form-label fw-semibold">Accepted Answers (One per line)</label>

@@ -8,6 +8,7 @@ from core.views import (
     learner_dashboard,
     subject_detail,
     topic_detail,
+    acknowledge_material,
 )
 from quizzes.views import quiz_modal, quiz_submit, quiz_result
 
@@ -31,4 +32,5 @@ urlpatterns = [
     path('subject/<slug:slug>/topic/<int:topic_id>/quiz/', quiz_modal, name='quiz_modal'),
     path('subject/<slug:slug>/topic/<int:topic_id>/quiz/result/<int:attempt_id>/', quiz_result, name='quiz_result'),
     path('quiz/<int:topic_id>/submit/', quiz_submit, name='quiz_submit'),
+    path('materials/<int:resource_id>/acknowledge/', acknowledge_material, name='acknowledge_material'),
 ]

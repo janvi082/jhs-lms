@@ -1,4 +1,6 @@
 from django.db import models
+from django.conf import settings
+from django.utils import timezone
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.db.models.functions import Lower
@@ -142,6 +144,10 @@ class Topic(models.Model):
         default=True,
         help_text="Whether learners must complete an assessment to complete this topic."
     )
+    acknowledgement_required = models.BooleanField(
+        default=False,
+        help_text="Whether learners must acknowledge all required learning materials to complete this topic."
+    )
 
     class Meta:
         ordering = ['order', 'name']
@@ -223,6 +229,11 @@ class Resource(models.Model):
     url = models.URLField(help_text="Resource URL (e.g. OneDrive share link, PDF link, etc.)")
     description = models.TextField(blank=True)
     order = models.PositiveIntegerField(default=0, blank=True)
+    version = models.PositiveIntegerField(default=1)
+    is_required = models.BooleanField(
+        default=True,
+        help_text="Whether learners must acknowledge this material to complete the topic."
+    )
 
     class Meta:
         ordering = ['order', 'id']
@@ -235,3 +246,31 @@ class Resource(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.get_resource_type_display()})"
+
+
+class ResourceAcknowledgement(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='resource_acknowledgements'
+    )
+    resource = models.ForeignKey(
+        Resource,
+        on_delete=models.CASCADE,
+        related_name='acknowledgements'
+    )
+    acknowledged_version = models.PositiveIntegerField()
+    acknowledged_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = 'Resource Acknowledgement'
+        verbose_name_plural = 'Resource Acknowledgements'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'resource'],
+                name='unique_user_resource_acknowledgement'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} acknowledged {self.resource.title} (v' + str(self.acknowledged_version) + ')'

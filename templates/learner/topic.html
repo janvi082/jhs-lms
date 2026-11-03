@@ -60,8 +60,8 @@
 
                   <div class="d-flex align-items-center gap-2">
                     {% if access_state == 'LOCKED_SEQUENTIAL' %}
-                    <span id="locked-msg-vid-{{ video.id }}" class="text-warning small fw-bold d-none"><i class="bi bi-lock-fill"></i> Complete previous topic</span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="Complete the previous topic to unlock" onclick="document.getElementById('locked-msg-vid-{{ video.id }}').classList.toggle('d-none')">
+                    <span id="locked-msg-vid-{{ video.id }}" class="text-warning small fw-bold d-none"><i class="bi bi-lock-fill"></i> {{ lock_reason|default:"Complete the previous topic to unlock" }}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="{{ lock_reason|default:'Complete the previous topic to unlock' }}" onclick="document.getElementById('locked-msg-vid-{{ video.id }}').classList.toggle('d-none')">
                       <i class="bi bi-lock-fill me-1"></i> Watch Video
                     </button>
                     {% elif 'youtube.com' in video.url or 'youtu.be' in video.url %}
@@ -92,9 +92,9 @@
           <h5 class="fw-semibold text-dark mb-3"><i class="bi bi-folder-fill text-primary me-2"></i> Learning Materials</h5>
           <div class="row g-3">
             {% for res in resources %}
-            <div class="col-12">
-              <div class="border rounded p-3 bg-white d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
-                <div class="d-flex align-items-start gap-3">
+            <div class="col-12" id="material-{{ res.id }}">
+              <div class="border rounded p-3 bg-white d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div class="d-flex align-items-start gap-3 flex-grow-1">
                   <div class="resource-icon flex-shrink-0 mt-1">
                     {% if res.resource_type == 'pdf' %}<i class="bi bi-file-earmark-pdf-fill text-danger"></i>
                     {% elif res.resource_type == 'excel' %}<i class="bi bi-file-earmark-excel-fill text-success"></i>
@@ -108,25 +108,113 @@
                     {% if res.description %}
                       <p class="text-muted small mb-1">{{ res.description }}</p>
                     {% endif %}
-                    <span class="badge bg-light text-dark border small">
-                      {{ res.get_resource_type_display }}
-                    </span>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                      <span class="badge bg-light text-dark border small">
+                        {{ res.get_resource_type_display }}
+                      </span>
+                      {% if topic.acknowledgement_required %}
+                        {% if res.ack_status == 'acknowledged' %}
+                          <span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 small">
+                            <i class="bi bi-check2-circle me-1"></i> Acknowledged
+                            {% if res.ack_obj.acknowledged_at %}
+                              <span class="ms-1 fw-normal opacity-75">({{ res.ack_obj.acknowledged_at|date:"M d, Y" }})</span>
+                            {% endif %}
+                          </span>
+                        {% elif res.ack_status == 'updated' %}
+                          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 small">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Updated — Review Required
+                          </span>
+                        {% else %}
+                          <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2 small">
+                            <i class="bi bi-hourglass-split me-1"></i> Pending Review
+                          </span>
+                        {% endif %}
+                      {% endif %}
+                    </div>
                   </div>
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 flex-shrink-0">
                   {% if access_state == 'LOCKED_SEQUENTIAL' %}
-                  <span id="locked-msg-res-{{ res.id }}" class="text-warning small fw-bold d-none"><i class="bi bi-lock-fill"></i> Complete previous topic</span>
-                  <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="Complete the previous topic to unlock" onclick="document.getElementById('locked-msg-res-{{ res.id }}').classList.toggle('d-none')">
-                    <i class="bi bi-lock-fill me-1"></i> Open Material
-                  </button>
+                    <span id="locked-msg-res-{{ res.id }}" class="text-warning small fw-bold d-none"><i class="bi bi-lock-fill"></i> {{ lock_reason|default:"Complete the previous topic to unlock" }}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="{{ lock_reason|default:'Complete the previous topic to unlock' }}" onclick="document.getElementById('locked-msg-res-{{ res.id }}').classList.toggle('d-none')">
+                      <i class="bi bi-lock-fill me-1"></i> Open Material
+                    </button>
                   {% else %}
-                  <a href="{{ res.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary text-nowrap">
-                    <i class="bi bi-box-arrow-up-right me-1"></i> Open Material
-                  </a>
+                    <a href="{{ res.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary text-nowrap">
+                      <i class="bi bi-box-arrow-up-right me-1"></i> Open Material
+                    </a>
+                    {% if topic.acknowledgement_required %}
+                      {% if res.ack_status == 'pending' %}
+                        <button type="button" class="btn btn-sm btn-outline-success text-nowrap" data-bs-toggle="modal" data-bs-target="#confirmAckModal_{{ res.id }}" title="Confirm you have reviewed this material">
+                          <i class="bi bi-check2 me-1"></i> Confirm Review
+                        </button>
+                      {% elif res.ack_status == 'updated' %}
+                        <button type="button" class="btn btn-sm btn-warning text-nowrap fw-medium" data-bs-toggle="modal" data-bs-target="#confirmAckModal_{{ res.id }}" title="Acknowledge updated version">
+                          <i class="bi bi-arrow-repeat me-1"></i> Acknowledge Latest
+                        </button>
+                      {% elif res.ack_status == 'acknowledged' %}
+                        <button type="button" class="btn btn-sm btn-light text-success border text-nowrap" disabled>
+                          <i class="bi bi-check2-all me-1"></i> Reviewed
+                        </button>
+                      {% endif %}
+                    {% endif %}
                   {% endif %}
                 </div>
               </div>
             </div>
+
+            <!-- Material Review Confirmation Modal -->
+            {% if topic.acknowledgement_required and res.ack_status == 'pending' or topic.acknowledgement_required and res.ack_status == 'updated' %}
+            <div class="modal fade" id="confirmAckModal_{{ res.id }}" tabindex="-1" aria-labelledby="confirmAckModalLabel_{{ res.id }}" aria-hidden="true">
+              <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow">
+                  <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="confirmAckModalLabel_{{ res.id }}">
+                      <i class="bi bi-file-earmark-check text-success fs-4"></i>
+                      Confirm Material Review
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body p-4">
+                    <div class="mb-3">
+                      <div class="fw-semibold text-dark fs-6">{{ res.title }}</div>
+                      <div class="text-muted small">
+                        Type: <span class="badge bg-light text-dark border">{{ res.get_resource_type_display }}</span>
+                        &bull; Version: <span class="fw-medium text-dark">v{{ res.version }}</span>
+                      </div>
+                    </div>
+
+                    {% if res.ack_status == 'updated' %}
+                    <div class="alert alert-warning py-2 small mb-3 d-flex align-items-center gap-2">
+                      <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0"></i>
+                      <div>This material has been updated to <strong>Version {{ res.version }}</strong> since you previously reviewed it. Please confirm you have reviewed the latest version.</div>
+                    </div>
+                    {% else %}
+                    <p class="text-secondary small mb-3">
+                      Please acknowledge that you have viewed this learning material, carefully reviewed its contents, and understood the key concepts covered.
+                    </p>
+                    {% endif %}
+
+                    <div class="form-check p-3 bg-light rounded border">
+                      <input class="form-check-input ack-checkbox" type="checkbox" id="ack_confirm_check_{{ res.id }}" data-resource-id="{{ res.id }}">
+                      <label class="form-check-label text-dark small fw-medium" for="ack_confirm_check_{{ res.id }}">
+                        I confirm that I have completed this material and understand its content.
+                      </label>
+                    </div>
+                  </div>
+                  <div class="modal-footer border-top bg-light-subtle py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form method="post" action="{% url 'acknowledge_material' res.id %}" class="d-inline m-0">
+                      {% csrf_token %}
+                      <button type="submit" id="btn_submit_ack_{{ res.id }}" class="btn btn-sm btn-success px-3" disabled>
+                        <i class="bi bi-check-lg me-1"></i> Confirm &amp; Acknowledge
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
             {% endfor %}
           </div>
         </div>
@@ -147,9 +235,9 @@
 
         {% if access_state == 'LOCKED_SEQUENTIAL' %}
           <div class="mb-2 text-center text-warning small fw-bold d-none" id="locked-msg-quiz">
-            <i class="bi bi-lock-fill"></i> Complete the previous topic to unlock
+            <i class="bi bi-lock-fill"></i> {{ lock_reason|default:"Complete the previous topic to unlock" }}
           </div>
-          <button type="button" class="btn btn-secondary w-100 py-2 fw-semibold" title="Complete the previous topic to unlock" onclick="document.getElementById('locked-msg-quiz').classList.toggle('d-none')">
+          <button type="button" class="btn btn-secondary w-100 py-2 fw-semibold" title="{{ lock_reason|default:'Complete the previous topic to unlock' }}" onclick="document.getElementById('locked-msg-quiz').classList.toggle('d-none')">
             <i class="bi bi-lock-fill me-1"></i> Take Assessment
           </button>
         {% elif is_assessment_ready %}
@@ -224,9 +312,9 @@
           {{ next_topic.name }} <i class="bi bi-arrow-right"></i>
         </a>
         {% else %}
-        <div class="fw-semibold text-muted opacity-75">
+        <div class="fw-semibold text-muted opacity-75" title="{{ next_topic_lock_reason|default:'Upcoming' }}">
           <i class="bi bi-lock-fill"></i> {{ next_topic.name }}
-          <div class="small fw-normal mt-1">Upcoming</div>
+          <div class="small fw-normal mt-1">{{ next_topic_lock_reason|default:"Upcoming" }}</div>
         </div>
         {% endif %}
       </div>
@@ -305,5 +393,32 @@ function getYouTubeEmbedUrl(url) {
     }
     return null;
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.ack-checkbox').forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+            const resId = this.getAttribute('data-resource-id');
+            const submitBtn = document.getElementById('btn_submit_ack_' + resId);
+            if (submitBtn) {
+                submitBtn.disabled = !this.checked;
+            }
+        });
+    });
+
+    // Reset checkbox and disable button when modal is hidden
+    document.querySelectorAll('[id^="confirmAckModal_"]').forEach(function(modalEl) {
+        modalEl.addEventListener('hidden.bs.modal', function() {
+            const checkbox = this.querySelector('.ack-checkbox');
+            if (checkbox) {
+                checkbox.checked = false;
+                const resId = checkbox.getAttribute('data-resource-id');
+                const submitBtn = document.getElementById('btn_submit_ack_' + resId);
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+            }
+        });
+    });
+});
 </script>
 {% endblock %}

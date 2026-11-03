@@ -1,10 +1,11 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from accounts.models import User
-from content.models import Subject, Topic, SiteConfig
+from content.models import Subject, Topic, SiteConfig, Resource, ResourceAcknowledgement
 from progress.models import TopicProgress
 from quizzes.models import QuizAttempt
 from progress.services import (
@@ -16,8 +17,13 @@ from progress.services import (
     get_topic_access_state,
     TopicAccessState,
     get_next_topic,
+    reconcile_topic_progress,
+    get_sequential_lock_reason,
 )
 from access.services import has_subject_access, has_topic_access, has_video_access, has_resource_access
+from django.views.decorators.http import require_POST
+from django.utils import timezone
+from django.db import transaction, IntegrityError
 @login_required
 def learner_dashboard(request):
     user = request.user
@@ -76,13 +82,15 @@ def subject_detail(request, slug):
     for topic in active_topics:
         prog = user_progresses.get(topic.id)
         display_status = get_topic_display_status(prog)
+        state = get_topic_access_state(request.user, topic)
         topics_data.append({
             'topic': topic,
             'progress': prog,
             'display_status': display_status,
             'best_score': prog.best_score if prog and prog.attempts_count > 0 and getattr(prog, 'has_finalized_score', True) else None,
             'is_ready': topic.is_assessment_ready(),
-            'access_state': get_topic_access_state(request.user, topic),
+            'access_state': state,
+            'lock_reason': get_sequential_lock_reason(request.user, topic) if state == TopicAccessState.LOCKED_SEQUENTIAL else None,
         })
         
     summary = get_subject_progress_summary(request.user, subject)
@@ -156,12 +164,34 @@ def topic_detail(request, slug, topic_id):
     # Determine next topic (simple progression)
     next_topic = get_next_topic(request.user, topic)
     
+    # Build acknowledgement map for current user
+    acks = {
+        ack.resource_id: ack
+        for ack in ResourceAcknowledgement.objects.filter(
+            user=request.user,
+            resource__in=resources
+        )
+    }
+    for r in resources:
+        ack = acks.get(r.id)
+        if not ack:
+            r.ack_status = 'pending'
+            r.ack_obj = None
+        elif ack.acknowledged_version == r.version:
+            r.ack_status = 'acknowledged'
+            r.ack_obj = ack
+        else:
+            r.ack_status = 'updated'
+            r.ack_obj = ack
+
     site_config = SiteConfig.get_solo()
     
     context = {
         'subject': topic.subject,
         'topic': topic,
         'access_state': access_state,
+        'lock_reason': get_sequential_lock_reason(request.user, topic) if access_state == TopicAccessState.LOCKED_SEQUENTIAL else None,
+        'next_topic_lock_reason': get_sequential_lock_reason(request.user, next_topic) if (next_topic and get_topic_access_state(request.user, next_topic) == TopicAccessState.LOCKED_SEQUENTIAL) else None,
         'progress': progress,
         'display_status': display_status,
         'videos': videos,
@@ -170,7 +200,7 @@ def topic_detail(request, slug, topic_id):
         'next_topic': next_topic,
         'next_topic_unlocked': (
             get_topic_access_state(request.user, next_topic)
-            not in (TopicAccessState.DENIED, TopicAccessState.UPCOMING)
+            not in (TopicAccessState.DENIED, TopicAccessState.UPCOMING, TopicAccessState.LOCKED_SEQUENTIAL)
         ) if next_topic else False,
         'effective_passing_score': topic.effective_passing_score,
         'required_question_count': site_config.default_required_question_count,
@@ -243,3 +273,95 @@ def admin_learner_progress_detail(request, user_id):
         'overall_progress': overall_progress,
     }
     return render(request, 'admin_dashboard/learner_progress.html', context)
+
+
+def _is_expected_acknowledgement_unique_violation(exc):
+    """
+    Reliably determine if an IntegrityError was caused by the expected unique
+    constraint on (user, resource) for ResourceAcknowledgement across supported backends.
+    """
+    cause = getattr(exc, '__cause__', None)
+    # 1. PostgreSQL (via psycopg2 / Neon) exposes exact constraint name on diag
+    if cause is not None:
+        diag = getattr(cause, 'diag', None)
+        if diag is not None:
+            constraint_name = getattr(diag, 'constraint_name', None)
+            if constraint_name == 'unique_user_resource_acknowledgement':
+                return True
+
+    # 2. SQLite / fallback message inspection: explicitly verify table and unique columns/constraint
+    err_msg = str(exc).lower()
+    if 'unique' in err_msg and ('unique_user_resource_acknowledgement' in err_msg or ('content_resourceacknowledgement' in err_msg and 'user_id' in err_msg and 'resource_id' in err_msg)):
+        return True
+
+    return False
+
+
+@login_required
+@require_POST
+def acknowledge_material(request, resource_id):
+    resource = get_object_or_404(Resource, id=resource_id, topic__is_active=True)
+    topic = resource.topic
+    user = request.user
+
+    # Permission check: must have access to topic and resource
+    if not has_topic_access(user, topic) or not has_resource_access(user, resource):
+        raise PermissionDenied("You do not have permission to access this learning material.")
+
+    # Access state check: sequential lock or denied must block acknowledgement
+    access_state = get_topic_access_state(user, topic)
+    if access_state in (TopicAccessState.DENIED, TopicAccessState.UPCOMING, TopicAccessState.LOCKED_SEQUENTIAL):
+        raise PermissionDenied("This topic is currently locked or inaccessible.")
+
+    # Concurrency-safe write handling first-time creation race and updates
+    now = timezone.now()
+    try:
+        with transaction.atomic():
+            ack = ResourceAcknowledgement.objects.select_for_update().filter(
+                user=user,
+                resource=resource
+            ).first()
+
+            if ack is None:
+                ResourceAcknowledgement.objects.create(
+                    user=user,
+                    resource=resource,
+                    acknowledged_version=resource.version,
+                    acknowledged_at=now
+                )
+                messages.success(request, f"Review confirmed for '{resource.title}'.")
+            elif ack.acknowledged_version != resource.version:
+                ack.acknowledged_version = resource.version
+                ack.acknowledged_at = now
+                ack.save(update_fields=['acknowledged_version', 'acknowledged_at'])
+                messages.success(request, f"Updated review confirmed for '{resource.title}'.")
+            else:
+                # Already acknowledged at current version: idempotent no-op (do not rewrite timestamp)
+                messages.info(request, f"Review for '{resource.title}' is already up to date.")
+    except IntegrityError as exc:
+        # Recover only if the error is genuinely the expected unique constraint on (user, resource)
+        if not _is_expected_acknowledgement_unique_violation(exc):
+            raise
+
+        # Re-read outside the failed atomic block within a clean atomic transaction
+        with transaction.atomic():
+            ack = ResourceAcknowledgement.objects.select_for_update().filter(
+                user=user,
+                resource=resource
+            ).first()
+            if ack is None:
+                # No record exists despite constraint match; re-raise safely
+                raise
+            if ack.acknowledged_version != resource.version:
+                ack.acknowledged_version = resource.version
+                ack.acknowledged_at = now
+                ack.save(update_fields=['acknowledged_version', 'acknowledged_at'])
+                messages.success(request, f"Updated review confirmed for '{resource.title}'.")
+            else:
+                messages.info(request, f"Review for '{resource.title}' is already up to date.")
+
+    # Reconcile topic progress to evaluate completion under configurable rules
+    reconcile_topic_progress(user, topic)
+
+    target_url = reverse('topic_detail', args=[topic.subject.slug, topic.id])
+    return redirect(f"{target_url}#material-{resource.id}")

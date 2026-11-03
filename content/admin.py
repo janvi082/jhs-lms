@@ -1,6 +1,6 @@
 from django.contrib import admin
 from adminsortable2.admin import SortableAdminMixin, SortableInlineAdminMixin
-from .models import SiteConfig, Subject, Topic, Video, Resource
+from .models import SiteConfig, Subject, Topic, Video, Resource, ResourceAcknowledgement
 from quizzes.models import Question, Choice
 
 @admin.register(SiteConfig)
@@ -19,7 +19,7 @@ class SiteConfigAdmin(admin.ModelAdmin):
 class TopicInline(SortableInlineAdminMixin, admin.TabularInline):
     model = Topic
     extra = 1
-    fields = ('name', 'summary', 'order', 'is_active', 'passing_score_override')
+    fields = ('name', 'summary', 'order', 'is_active', 'passing_score_override', 'assessment_required', 'acknowledgement_required')
     show_change_link = True
 
 @admin.register(Subject)
@@ -42,7 +42,7 @@ class VideoInline(SortableInlineAdminMixin, admin.StackedInline):
 class ResourceInline(SortableInlineAdminMixin, admin.StackedInline):
     model = Resource
     extra = 1
-    fields = ('title', 'resource_type', 'url', 'description', 'order')
+    fields = ('title', 'resource_type', 'is_required', 'version', 'url', 'description', 'order')
 
 class ChoiceInline(admin.TabularInline):
     model = Choice
@@ -56,8 +56,8 @@ class QuestionInline(SortableInlineAdminMixin, admin.StackedInline):
 
 @admin.register(Topic)
 class TopicAdmin(SortableAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'subject', 'order', 'question_count_display', 'is_active', 'passing_score_override')
-    list_filter = ('subject', 'is_active')
+    list_display = ('name', 'subject', 'order', 'question_count_display', 'is_active', 'assessment_required', 'acknowledgement_required', 'passing_score_override')
+    list_filter = ('subject', 'is_active', 'assessment_required', 'acknowledgement_required')
     search_fields = ('name', 'summary')
     inlines = [VideoInline, ResourceInline, QuestionInline]
 
@@ -75,6 +75,14 @@ class VideoAdmin(SortableAdminMixin, admin.ModelAdmin):
 
 @admin.register(Resource)
 class ResourceAdmin(SortableAdminMixin, admin.ModelAdmin):
-    list_display = ('title', 'topic', 'resource_type', 'order')
-    list_filter = ('resource_type', 'topic__subject', 'topic')
+    list_display = ('title', 'topic', 'resource_type', 'is_required', 'version', 'order')
+    list_filter = ('resource_type', 'is_required', 'topic__subject', 'topic')
     search_fields = ('title', 'description')
+
+
+@admin.register(ResourceAcknowledgement)
+class ResourceAcknowledgementAdmin(admin.ModelAdmin):
+    list_display = ('user', 'resource', 'acknowledged_version', 'acknowledged_at')
+    list_filter = ('acknowledged_version', 'acknowledged_at')
+    search_fields = ('user__username', 'user__email', 'resource__title')
+    readonly_fields = ('acknowledged_at',)

@@ -7,7 +7,7 @@ from django.db.models import ProtectedError
 import secrets
 import string
 
-from content.models import Subject, Topic, Video, Resource, SiteConfig, LearningPhase, PhaseName
+from content.models import Subject, Topic, Video, Resource, ResourceAcknowledgement, SiteConfig, LearningPhase, PhaseName
 from quizzes.models import Question, Choice, QuizAttempt, QuizResponse
 from accounts.models import User
 from progress.models import TopicProgress
@@ -266,6 +266,7 @@ def portal_topic_edit(request, topic_id):
                     'required_question_count': required_count,
                     'current_question_count': current_question_count,
                     'is_publishable': current_question_count >= required_count,
+                    'has_required_materials': topic.resources.filter(is_required=True).exists(),
                 }
                 return render(request, 'portal/topic_edit.html', context)
             # Save normally (draft or allowed publish)
@@ -290,6 +291,7 @@ def portal_topic_edit(request, topic_id):
                 'required_question_count': required_count,
                 'current_question_count': current_question_count,
                 'is_publishable': topic.is_assessment_ready(),
+                'has_required_materials': topic.resources.filter(is_required=True).exists(),
             }
             return render(request, 'portal/topic_edit.html', context)
     else:
@@ -313,6 +315,7 @@ def portal_topic_edit(request, topic_id):
         'required_question_count': required_count,
         'current_question_count': current_question_count,
         'is_publishable': topic.is_assessment_ready(),
+        'has_required_materials': topic.resources.filter(is_required=True).exists(),
     }
     return render(request, 'portal/topic_edit.html', context)
 
@@ -331,7 +334,7 @@ def portal_video_add(request, topic_id):
             return redirect('portal_topic_edit', topic_id=topic.id)
         else:
             site_config = SiteConfig.get_solo()
-            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.filter(is_active=True).order_by('order', 'id'), 'video_form': form, 'resource_form': ResourceForm(), 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.active_question_count, 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'video_add'}
+            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.filter(is_active=True).order_by('order', 'id'), 'video_form': form, 'resource_form': ResourceForm(), 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.active_question_count, 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'video_add', 'has_required_materials': topic.resources.filter(is_required=True).exists()}
             return render(request, 'portal/topic_edit.html', context)
 
 @admin_required
@@ -356,7 +359,7 @@ def portal_material_add(request, topic_id):
             return redirect('portal_topic_edit', topic_id=topic.id)
         else:
             site_config = SiteConfig.get_solo()
-            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.filter(is_active=True).order_by('order', 'id'), 'video_form': VideoForm(), 'resource_form': form, 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.active_question_count, 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'material_add'}
+            context = {'topic': topic, 'form': TopicForm(instance=topic), 'videos': topic.videos.all().order_by('order', 'id'), 'resources': topic.resources.all().order_by('order', 'id'), 'questions': topic.questions.filter(is_active=True).order_by('order', 'id'), 'video_form': VideoForm(), 'resource_form': form, 'required_question_count': site_config.default_required_question_count, 'current_question_count': topic.active_question_count, 'is_publishable': topic.is_assessment_ready(), 'show_modal': 'material_add', 'has_required_materials': topic.resources.filter(is_required=True).exists()}
             return render(request, 'portal/topic_edit.html', context)
 
 @admin_required
@@ -392,6 +395,7 @@ def portal_video_edit(request, video_id):
             'video_form': video_form,
             'resource_form': resource_form,
             'show_modal': f'video_edit_{video.id}',
+            'has_required_materials': topic.resources.filter(is_required=True).exists(),
         }
         return render(request, 'portal/topic_edit.html', context)
     else:
@@ -421,6 +425,7 @@ def portal_material_edit(request, material_id):
             'video_form': video_form,
             'resource_form': resource_form,
             'show_modal': f'material_edit_{material.id}',
+            'has_required_materials': topic.resources.filter(is_required=True).exists(),
         }
         return render(request, 'portal/topic_edit.html', context)
     else:
@@ -1528,6 +1533,94 @@ def portal_learner_progress_detail(request, learner_id):
 
     as_of_date = timezone.localdate()
 
+    # Prefetch all learning materials and acknowledgements for all published topics in two queries
+    all_resources = list(
+        Resource.objects.filter(topic__in=all_published_topics).order_by('order', 'id')
+    )
+    learner_acks = {
+        ack.resource_id: ack
+        for ack in ResourceAcknowledgement.objects.filter(user=learner, resource__in=all_resources)
+    }
+    resources_by_topic = {}
+    for r in all_resources:
+        resources_by_topic.setdefault(r.topic_id, []).append(r)
+
+    def get_topic_materials_summary(topic, subject_allowed, is_access_allowed):
+        """
+        Compute material review summary and individual resource statuses for a topic,
+        respecting topic/resource canonical access rules for the learner.
+        """
+        if not (subject_allowed and is_access_allowed):
+            return {
+                'total_materials': 0,
+                'acknowledged_count': 0,
+                'updated_count': 0,
+                'pending_count': 0,
+                'status_code': 'no_materials',
+                'items': [],
+            }
+
+        topic_res = resources_by_topic.get(topic.id, [])
+        # Only evaluate materials accessible to the learner under canonical access rules
+        accessible_res = [
+            r for r in topic_res
+            if access_services.has_resource_access(learner, r)
+        ]
+
+        if not accessible_res:
+            return {
+                'total_materials': 0,
+                'acknowledged_count': 0,
+                'updated_count': 0,
+                'pending_count': 0,
+                'status_code': 'no_materials',
+                'items': [],
+            }
+
+        items = []
+        ack_count = 0
+        updated_count = 0
+        pending_count = 0
+
+        for r in accessible_res:
+            ack = learner_acks.get(r.id)
+            if not ack:
+                status = 'pending'
+                pending_count += 1
+                ack_obj = None
+            elif ack.acknowledged_version == r.version:
+                status = 'acknowledged'
+                ack_count += 1
+                ack_obj = ack
+            else:
+                status = 'updated'
+                updated_count += 1
+                ack_obj = ack
+
+            items.append({
+                'resource': r,
+                'status': status,
+                'acknowledged_version': ack.acknowledged_version if ack else None,
+                'current_version': r.version,
+                'acknowledged_at': ack.acknowledged_at if ack else None,
+            })
+
+        if updated_count > 0:
+            status_code = 'updated'
+        elif pending_count > 0:
+            status_code = 'pending'
+        else:
+            status_code = 'acknowledged'
+
+        return {
+            'total_materials': len(accessible_res),
+            'acknowledged_count': ack_count,
+            'updated_count': updated_count,
+            'pending_count': pending_count,
+            'status_code': status_code,
+            'items': items,
+        }
+
     # Partition all curriculum topics by subject and phase (never discard restricted topics)
     curriculum_phase_topics = {}
     curriculum_unassigned_topics = {}
@@ -1647,6 +1740,7 @@ def portal_learner_progress_detail(request, learner_id):
                     'attempts_count': prog.attempts_count if prog else 0,
                     'completed_at': prog.completed_at if (prog and prog.completed_at) else None,
                     'frozen_deadline': getattr(prog, 'frozen_deadline', None),
+                    'materials_summary': get_topic_materials_summary(topic, subject_allowed, is_access_allowed),
                 })
 
             phase_has_pending_review = any(
@@ -1711,6 +1805,7 @@ def portal_learner_progress_detail(request, learner_id):
                 'attempts_count': prog.attempts_count if prog else 0,
                 'completed_at': prog.completed_at if (prog and prog.completed_at) else None,
                 'frozen_deadline': getattr(prog, 'frozen_deadline', None),
+                'materials_summary': get_topic_materials_summary(topic, subject_allowed, is_access_allowed),
             })
 
         # Flat topics_info for backward compatibility

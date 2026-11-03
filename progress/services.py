@@ -14,6 +14,47 @@ def _get_effective_progression_sequence(user, subject):
     active_topics = list(Topic.objects.filter(subject=subject, is_active=True).order_by('order', 'id'))
     return [t for t in active_topics if has_topic_access(user, t)]
 
+def get_previous_topic(user, topic):
+    """
+    Returns the preceding active accessible topic in progression sequence for the user.
+    """
+    effective_topics = _get_effective_progression_sequence(user, topic.subject)
+    for i, t in enumerate(effective_topics):
+        if t.id == topic.id:
+            if i > 0:
+                return effective_topics[i - 1]
+            return None
+    return None
+
+def get_sequential_lock_reason(user, topic):
+    """
+    Generates an explanatory unlock message based on the previous topic's actual requirements.
+    Rules:
+    - Both quiz and material acknowledgement required:
+      "Complete the previous topic to unlock: pass the required quiz and review all required learning materials."
+    - Quiz required only:
+      "Complete the previous topic to unlock: pass the required quiz."
+    - Material acknowledgement required only:
+      "Complete the previous topic to unlock: review and acknowledge all required learning materials."
+    - Neither required:
+      "Complete the previous topic to unlock."
+    """
+    prev_topic = get_previous_topic(user, topic)
+    if not prev_topic:
+        return "Complete the previous topic to unlock."
+
+    quiz_needed = bool(prev_topic.assessment_required and prev_topic.questions.filter(is_active=True).exists())
+    ack_needed = bool(getattr(prev_topic, 'acknowledgement_required', False))
+
+    if quiz_needed and ack_needed:
+        return "Complete the previous topic to unlock: pass the required quiz and review all required learning materials."
+    elif quiz_needed:
+        return "Complete the previous topic to unlock: pass the required quiz."
+    elif ack_needed:
+        return "Complete the previous topic to unlock: review and acknowledge all required learning materials."
+    else:
+        return "Complete the previous topic to unlock."
+
 def get_next_topic(user, topic):
     effective_topics = _get_effective_progression_sequence(user, topic.subject)
     for i, t in enumerate(effective_topics):
@@ -82,12 +123,53 @@ def is_topic_unlocked(user, topic):
     state = get_topic_access_state(user, topic)
     return state in (TopicAccessState.AVAILABLE, TopicAccessState.COMPLETED)
 
+def is_topic_material_review_complete(user, topic):
+    """
+    Checks if all accessible, required learning materials for a topic
+    have been acknowledged by the user at their current version.
+
+    Rules:
+    - If acknowledgement is not required: returns True.
+    - If acknowledgement is required, but there are ZERO accessible required materials:
+      returns False (completion is blocked).
+    - If all accessible required materials are acknowledged at their current version: returns True.
+    - Optional materials and inaccessible materials never block completion.
+    """
+    if not getattr(topic, 'acknowledgement_required', False):
+        return True
+
+    from access.services import has_resource_access
+    from content.models import ResourceAcknowledgement
+
+    required_resources = list(topic.resources.filter(is_required=True))
+    accessible_required = [r for r in required_resources if has_resource_access(user, r)]
+
+    if not accessible_required:
+        return False
+
+    acks = {
+        ack.resource_id: ack.acknowledged_version
+        for ack in ResourceAcknowledgement.objects.filter(
+            user=user,
+            resource__in=accessible_required
+        )
+    }
+
+    for r in accessible_required:
+        if acks.get(r.id) != r.version:
+            return False
+
+    return True
+
 def _mark_topic_completed_locked(progress, topic, user, completion_time=None):
     """
     Internal helper to mark a locked TopicProgress instance as COMPLETED.
     Must be called within an active transaction holding select_for_update on progress.
     """
     if topic.assessment_required and topic.active_question_count > 0:
+        return progress
+
+    if getattr(topic, 'acknowledgement_required', False) and not is_topic_material_review_complete(user, topic):
         return progress
 
     if completion_time is None:
@@ -126,21 +208,25 @@ def _mark_topic_completed_locked(progress, topic, user, completion_time=None):
 
 def complete_non_assessed_topic(user, topic):
     from access.services import has_subject_access, has_topic_access
-    if not topic.assessment_required or topic.active_question_count == 0:
-        if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
-            if is_topic_unlocked(user, topic):
-                with transaction.atomic():
-                    expected_end_day = topic.learning_phase.end_day if topic.learning_phase_id else None
-                    progress, _ = TopicProgress.objects.get_or_create(
-                        user=user,
-                        topic=topic,
-                        defaults={
-                            'expected_end_day_snapshot': expected_end_day
-                        }
-                    )
-                    progress = TopicProgress.objects.select_for_update().get(id=progress.id)
-                    _mark_topic_completed_locked(progress, topic, user)
-                    return progress
+    assessment_needed = bool(topic.assessment_required and topic.active_question_count > 0)
+    ack_needed = bool(getattr(topic, 'acknowledgement_required', False))
+
+    if not assessment_needed:
+        if not ack_needed or is_topic_material_review_complete(user, topic):
+            if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
+                if is_topic_unlocked(user, topic):
+                    with transaction.atomic():
+                        expected_end_day = topic.learning_phase.end_day if topic.learning_phase_id else None
+                        progress, _ = TopicProgress.objects.get_or_create(
+                            user=user,
+                            topic=topic,
+                            defaults={
+                                'expected_end_day_snapshot': expected_end_day
+                            }
+                        )
+                        progress = TopicProgress.objects.select_for_update().get(id=progress.id)
+                        _mark_topic_completed_locked(progress, topic, user)
+                        return progress
     return None
 
 def record_topic_view(user, topic):
@@ -175,7 +261,9 @@ def record_topic_view(user, topic):
         progress.save(update_fields=update_fields)
 
         from access.services import has_subject_access, has_topic_access
-        if not topic.assessment_required or topic.active_question_count == 0:
+        assessment_needed = bool(topic.assessment_required and topic.active_question_count > 0)
+        ack_needed = bool(getattr(topic, 'acknowledgement_required', False))
+        if not assessment_needed and (not ack_needed or is_topic_material_review_complete(user, topic)):
             if has_subject_access(user, topic.subject) and has_topic_access(user, topic):
                 _mark_topic_completed_locked(progress, topic, user, completion_time=progress.last_accessed)
 
@@ -348,7 +436,9 @@ def calculate_reconciled_fields(
     date_of_joining=None,
     phase_end_day=None,
     expected_end_day_snapshot=None,
-    current_timing_provenance=None
+    current_timing_provenance=None,
+    topic_acknowledgement_required=False,
+    materials_acknowledged=True
 ):
     from progress.models import TopicProgress
 
@@ -370,13 +460,15 @@ def calculate_reconciled_fields(
 
     if topic_assessment_required:
         has_passed = any(a['passed'] for a in fully_graded)
-        if has_passed:
+        acknowledgement_satisfied = (not topic_acknowledgement_required) or bool(materials_acknowledged)
+
+        if has_passed and acknowledgement_satisfied:
             is_first_completion = (current_status != TopicProgress.STATUS_COMPLETED)
             earliest_passed = next(a for a in fully_graded if a['passed'])
 
             if is_first_completion:
-                if date_of_joining is None:
-                    # Missing DOJ: do not finalize topic completion.
+                if date_of_joining is None and phase_end_day is not None:
+                    # Missing DOJ on phased topic: do not finalize topic completion.
                     # Retain IN_PROGRESS, do not set completed_at or frozen_deadline.
                     status = TopicProgress.STATUS_IN_PROGRESS
                     completed_at = None
@@ -391,7 +483,7 @@ def calculate_reconciled_fields(
                         if (expected_end_day_snapshot is not None and expected_end_day_snapshot >= 1)
                         else phase_end_day
                     )
-                    frozen_deadline = calculate_nominal_deadline(date_of_joining, effective_end_day)
+                    frozen_deadline = calculate_nominal_deadline(date_of_joining, effective_end_day) if date_of_joining else None
                     if frozen_deadline is not None:
                         timing_provenance = TopicProgress.PROVENANCE_SYSTEM_CAPTURED
                     else:
@@ -412,7 +504,47 @@ def calculate_reconciled_fields(
             # completed_at, frozen_deadline, and timing_provenance remain unchanged
             timing_provenance = current_timing_provenance
 
-        elif attempts_count > 0:
+        elif attempts_count > 0 or current_status == TopicProgress.STATUS_IN_PROGRESS:
+            status = TopicProgress.STATUS_IN_PROGRESS
+            completed_at = None
+            frozen_deadline = None
+            timing_provenance = None
+        else:
+            status = TopicProgress.STATUS_NOT_STARTED
+            completed_at = None
+            frozen_deadline = None
+            timing_provenance = None
+    else:
+        # Non-assessed topic: gated purely on material review (if acknowledgement_required)
+        acknowledgement_satisfied = (not topic_acknowledgement_required) or bool(materials_acknowledged)
+
+        if current_status == TopicProgress.STATUS_COMPLETED:
+            # Routine reconciliation trusts an established completion
+            status = TopicProgress.STATUS_COMPLETED
+            timing_provenance = current_timing_provenance
+        elif acknowledgement_satisfied:
+            if date_of_joining is None and phase_end_day is not None:
+                status = TopicProgress.STATUS_IN_PROGRESS
+                completed_at = None
+                frozen_deadline = None
+                timing_provenance = None
+            else:
+                status = TopicProgress.STATUS_COMPLETED
+                if completed_at is None:
+                    completed_at = timezone.now()
+                effective_end_day = (
+                    expected_end_day_snapshot
+                    if (expected_end_day_snapshot is not None and expected_end_day_snapshot >= 1)
+                    else phase_end_day
+                )
+                frozen_deadline = calculate_nominal_deadline(date_of_joining, effective_end_day) if date_of_joining else None
+                if frozen_deadline is not None:
+                    timing_provenance = TopicProgress.PROVENANCE_SYSTEM_CAPTURED
+                else:
+                    timing_provenance = None
+                if (snapshot is None or snapshot < 1) and phase_end_day is not None and phase_end_day >= 1:
+                    snapshot = phase_end_day
+        elif current_status == TopicProgress.STATUS_IN_PROGRESS:
             status = TopicProgress.STATUS_IN_PROGRESS
             completed_at = None
             frozen_deadline = None
@@ -466,8 +598,9 @@ def reconcile_topic_progress(user, topic):
         phase_end_day = topic.learning_phase.end_day if (topic.learning_phase_id and topic.learning_phase) else None
         doj = getattr(user, 'date_of_joining', None)
 
+        materials_ok = is_topic_material_review_complete(user, topic)
         result = calculate_reconciled_fields(
-            topic_assessment_required=topic.assessment_required and topic.questions.filter(is_active=True).exists(),
+            topic_assessment_required=bool(topic.assessment_required and topic.questions.filter(is_active=True).exists()),
             attempts_data=attempts_data,
             current_status=tp.status,
             current_completed_at=tp.completed_at,
@@ -476,6 +609,8 @@ def reconcile_topic_progress(user, topic):
             phase_end_day=phase_end_day,
             expected_end_day_snapshot=tp.expected_end_day_snapshot,
             current_timing_provenance=tp.timing_provenance,
+            topic_acknowledgement_required=bool(getattr(topic, 'acknowledgement_required', False)),
+            materials_acknowledged=materials_ok,
         )
 
         tp.attempts_count = result['attempts_count']
