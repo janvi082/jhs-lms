@@ -263,18 +263,18 @@
               </span>
             </td>
 
-            <!-- Overall Progress (Preserving established subject-average progress) -->
+            <!-- Overall Progress (Topic-weighted progress aligned with topic count) -->
             <td>
               <div class="d-flex align-items-center gap-2">
                 <div class="progress flex-grow-1" style="height: 8px;">
-                  <div class="progress-bar {% if item.overall_progress == 100 %}bg-success{% elif item.overall_progress > 0 %}bg-primary{% endif %}"
+                  <div class="progress-bar {% if item.topic_weighted_progress == 100 %}bg-success{% elif item.topic_weighted_progress > 0 %}bg-primary{% endif %}"
                        role="progressbar"
-                       style="width: {{ item.overall_progress }}%;"
-                       aria-valuenow="{{ item.overall_progress }}"
+                       style="width: {{ item.topic_weighted_progress|default:0 }}%;"
+                       aria-valuenow="{{ item.topic_weighted_progress|default:0 }}"
                        aria-valuemin="0"
                        aria-valuemax="100"></div>
                 </div>
-                <span class="small fw-semibold text-dark text-nowrap" style="min-width: 38px;">{{ item.overall_progress }}%</span>
+                <span class="small fw-semibold text-dark text-nowrap" style="min-width: 38px;">{{ item.topic_weighted_display }}</span>
               </div>
               {% if item.topic_weighted_display != "N/A" and item.accessible_topics_count > 0 %}
                 <div class="text-muted" style="font-size: 0.75rem;">

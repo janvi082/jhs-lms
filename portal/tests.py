@@ -1257,3 +1257,142 @@ class PortalProgressOverviewTests(TestCase):
         self.assertLess(idx_overdue, idx_clean)
         self.assertLess(idx_due_soon, idx_clean)
         self.assertLess(idx_timing_unavail, idx_clean)
+
+    def test_topic_weighted_progress_display_with_unequal_subjects(self):
+        """
+        Verify that the main progress bar in portal/progress_list.html displays the topic-weighted
+        percentage and matching topic count, rather than the unweighted subject average:
+        - Subject A: 1 of 1 topic completed (100% subject progress).
+        - Subject B: 0 of 9 topics completed (0% subject progress).
+        - Overall topic ratio: 1 of 10 topics completed (10% progress).
+        - Subject average would be 50%, which should NOT be displayed in the progress bar.
+        """
+        subject_a = Subject.objects.create(name='Subject A Unequal', order=10, is_active=True)
+        phase_a = LearningPhase.objects.create(subject=subject_a, name='Phase A', start_day=1, end_day=10)
+        t_a1 = Topic.objects.create(
+            subject=subject_a,
+            learning_phase=phase_a,
+            name='Topic A1',
+            order=1,
+            status=Topic.STATUS_PUBLISHED,
+            is_active=True,
+            assessment_required=False
+        )
+
+        subject_b = Subject.objects.create(name='Subject B Unequal', order=11, is_active=True)
+        phase_b = LearningPhase.objects.create(subject=subject_b, name='Phase B', start_day=1, end_day=20)
+        for i in range(1, 10):
+            Topic.objects.create(
+                subject=subject_b,
+                learning_phase=phase_b,
+                name=f'Topic B{i}',
+                order=i,
+                status=Topic.STATUS_PUBLISHED,
+                is_active=True,
+                assessment_required=False
+            )
+
+        learner_unequal = User.objects.create_user(
+            username='learner_unequal_test',
+            first_name='Unequal',
+            last_name='Tester',
+            email='unequal@example.com',
+            password='password123',
+            role=User.ROLE_LEARNER,
+            date_of_joining=self.today - timedelta(days=5)
+        )
+        # Deny access to other topics/subjects: learner has access only to Subject A and Subject B
+        # Notice active_subjects in the test database includes self.subject, self.future_subject, subject_a, subject_b (4 active subjects).
+        # Subject A: 100%, Subject B: 0%, self.subject: 0%, self.future_subject: 0%.
+        # Unweighted average across 4 active subjects = (100 + 0 + 0 + 0) / 4 = 25%.
+        # Meanwhile topic-weighted ratio across all accessible topics = 1 of 10 topics = 10%.
+        for s in (self.subject, self.future_subject):
+            LearnerAccess.objects.create(
+                learner=learner_unequal,
+                content_type=ContentType.objects.get_for_model(Subject),
+                object_id=s.id,
+                is_allowed=False
+            )
+
+        # Complete only Topic A1
+        TopicProgress.objects.create(
+            user=learner_unequal,
+            topic=t_a1,
+            status=TopicProgress.STATUS_COMPLETED,
+            completed_at=timezone.now() - timedelta(days=2),
+            frozen_deadline=self.today + timedelta(days=5),
+            expected_end_day_snapshot=10
+        )
+
+        url = reverse('portal_progress')
+        res = self.client.get(url, {'q': 'learner_unequal_test'})
+        self.assertEqual(res.status_code, 200)
+
+        # Verify context metrics
+        learners = res.context['learners_data']
+        self.assertEqual(len(learners), 1)
+        target = learners[0]
+        self.assertEqual(target['overall_progress'], 25)  # subject average is 25% (across 4 active subjects)
+        self.assertEqual(target['topic_weighted_progress'], 10)  # topic-weighted is 10%
+        self.assertEqual(target['topic_weighted_display'], '10%')
+        self.assertEqual(target['completed_topics_count'], 1)
+        self.assertEqual(target['accessible_topics_count'], 10)
+
+        # Verify HTML rendered output
+        content = res.content.decode('utf-8')
+        # Progress bar width and aria-valuenow must reflect 10%, NOT the subject-average result of 25%
+        self.assertIn('style="width: 10%;"', content)
+        self.assertIn('aria-valuenow="10"', content)
+        self.assertNotIn('style="width: 25%;"', content)
+        self.assertNotIn('aria-valuenow="25"', content)
+
+        # Label must show 10%
+        self.assertIn('>10%</span>', content)
+
+        # Supporting text must show 1 of 10 topics
+        self.assertIn('1 of 10 topics', content)
+
+    def test_topic_weighted_progress_display_with_zero_eligible_topics(self):
+        """
+        Verify that a learner with zero eligible topics renders:
+        - A zero-width progress bar (width: 0%).
+        - aria-valuenow="0".
+        - Visible percentage label as N/A.
+        - Suppresses the '0 of 0 topics' supporting line.
+        """
+        learner_zero = User.objects.create_user(
+            username='learner_zero_topics',
+            first_name='Zero',
+            last_name='Topics',
+            email='zero@example.com',
+            password='password123',
+            role=User.ROLE_LEARNER,
+            date_of_joining=self.today
+        )
+        # Deny access to all active subjects
+        for s in Subject.objects.filter(is_active=True):
+            LearnerAccess.objects.create(
+                learner=learner_zero,
+                content_type=ContentType.objects.get_for_model(Subject),
+                object_id=s.id,
+                is_allowed=False
+            )
+
+        url = reverse('portal_progress')
+        res = self.client.get(url, {'q': 'learner_zero_topics'})
+        self.assertEqual(res.status_code, 200)
+
+        learners = res.context['learners_data']
+        self.assertEqual(len(learners), 1)
+        target = learners[0]
+        self.assertIsNone(target['topic_weighted_progress'])
+        self.assertEqual(target['topic_weighted_display'], 'N/A')
+        self.assertEqual(target['accessible_topics_count'], 0)
+        self.assertEqual(target['completed_topics_count'], 0)
+
+        # HTML assertions
+        content = res.content.decode('utf-8')
+        self.assertIn('style="width: 0%;"', content)
+        self.assertIn('aria-valuenow="0"', content)
+        self.assertIn('>N/A</span>', content)
+        self.assertNotIn('0 of 0 topics', content)
